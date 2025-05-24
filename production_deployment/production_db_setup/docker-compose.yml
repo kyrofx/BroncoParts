@@ -1,0 +1,43 @@
+version: '3.8'
+
+# This docker-compose.yml file expects the following environment variables to be set:
+# DB_NAME: The name of the database to be created/used.
+# DB_USER: The username for the application to connect to the database.
+# DB_PASSWORD: The password for the DB_USER.
+# DB_ROOT_PASSWORD: The root password for the MySQL instance (for administrative tasks).
+#
+# These variables should be set in the environment where 'docker-compose up' is run,
+# or through a .env file in the same directory as this docker-compose.yml file.
+# Example .env file content (DO NOT COMMIT THIS FILE TO VERSION CONTROL if it contains real secrets):
+# DB_NAME=broncoparts_prod
+# DB_USER=bp_user
+# DB_PASSWORD=supersecretprodpassword
+# DB_ROOT_PASSWORD=evenmoresecretprodrootpassword
+
+services:
+  db:
+    image: mysql
+    container_name: BroncoPartsDB 
+    restart: always
+    environment:
+      MYSQL_DATABASE: '${DB_NAME}'
+      MYSQL_ROOT_PASSWORD: '${DB_ROOT_PASSWORD}'  # root/pass
+    ports:
+      # Consider if the port needs to be exposed to the host.
+      # If only other containers in the same Docker network need access,
+      # you might not need to map it to the host.
+      # For external access (e.g., from your application server if not containerized with db):
+      - "3306:3306"
+    volumes:
+      # Named volume for persisting database data across container restarts/recreations
+      - production_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "--user=${DB_USER}", "--password=${DB_PASSWORD}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s 
+
+volumes:
+  production_mysql_data:
+    driver: local 

@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager # Import JWTManager
+import os # Import os module
 
 # Initialize extensions
 db = SQLAlchemy()
@@ -12,16 +13,32 @@ def create_app():
     app = Flask(__name__)
 
     # Configuration settings
-    # TODO: Move these to a configuration file or environment variables for production
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:bronco_racing@127.0.0.1/bronco_parts' # Changed to pymysql
+    # Read from environment variables, with fallbacks for local development if appropriate
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+        'DATABASE_URL', 
+        'mysql+pymysql://root:bronco_racing@127.0.0.1/bronco_parts'
+    )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['JWT_SECRET_KEY'] = 'super-secret'  # Change this in your application!
-    # TODO: Consider using environment variables for JWT_SECRET_KEY
+    
+    jwt_secret_key = os.environ.get('JWT_SECRET_KEY')
+    if not jwt_secret_key and app.config['ENV'] == 'production':
+        raise ValueError("No JWT_SECRET_KEY set for Flask application in production environment.")
+    app.config['JWT_SECRET_KEY'] = jwt_secret_key or 'super-secret-dev-key' # Fallback for dev only
 
     # Initialize extensions with the app
     db.init_app(app)
     migrate.init_app(app, db)
-    CORS(app, resources={r"/api/*": {"origins": "*"}})  # More specific CORS config
+
+    # CORS configuration
+    # For production, set CORS_ALLOWED_ORIGINS to your frontend's domain e.g., "http://localhost:3000,https://yourdomain.com"
+    # The current "*" is permissive.
+    allowed_origins = os.environ.get('CORS_ALLOWED_ORIGINS')
+    if allowed_origins:
+        origins = [origin.strip() for origin in allowed_origins.split(',')]
+    else:
+        origins = "*" # Default to all if not specified (consider changing for production)
+    
+    CORS(app, resources={r"/api/*": {"origins": origins}})
     jwt = JWTManager(app) # Initialize JWTManager
 
     # Configure logging

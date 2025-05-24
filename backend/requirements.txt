@@ -6,4 +6,5 @@ Flask-CORS
 # mysqlclient # Switched to PyMySQL
 PyMySQL
 Flask-JWT-Extended
+gunicorn # Added Gunicorn for production server
 # Add other dependencies here as we need them, e.g.:

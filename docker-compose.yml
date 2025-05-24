@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: broncoparts_db_prod
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-broncoparts_prod} # Default to broncoparts_prod if not set
+      MYSQL_USER: ${DB_USER:-bp_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-changeme}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-changeme_root}
+    volumes:
+      - broncoparts_mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306" # Expose only if direct access from host is needed, otherwise remove for better security
+    networks:
+      - broncoparts_network
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "--user=${DB_USER:-bp_user}", "--password=${DB_PASSWORD:-changeme}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: broncoparts_backend_prod
+    restart: always
+    environment:
+      FLASK_ENV: production
+      DATABASE_URL: mysql+pymysql://${DB_USER:-bp_user}:${DB_PASSWORD:-changeme}@db:3306/${DB_NAME:-broncoparts_prod}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your_strong_jwt_secret_here} # CHANGE THIS!
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080} # Adjust if your frontend runs on a different port locally or for prod domain
+      # Add any other backend-specific environment variables here
+    ports:
+      - "8000:8000" # Expose backend port for direct access if needed, or rely on frontend proxy
+    depends_on:
+      db:
+        condition: service_healthy # Wait for db to be healthy
+    networks:
+      - broncoparts_network
+    volumes:
+      - ./backend:/app # Optional: Mount for development to see code changes live (remove for pure production build)
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: broncoparts_frontend_prod
+    restart: always
+    ports:
+      - "8080:80" # Map host port 8080 to Nginx container port 80
+    depends_on:
+      - backend # Frontend depends on backend for API calls
+    networks:
+      - broncoparts_network
+
+networks:
+  broncoparts_network:
+    driver: bridge
+
+volumes:
+  broncoparts_mysql_data:
+    driver: local

@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.git
+.gitignore
+.vscode/
+*.db # if you have local sqlite dbs
+*.sqlite3
+instance/
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
+*.egg-info/
+htmlcov/
+.coverage
+.DS_Store
+migrations/__pycache__/
+app/__pycache__/
