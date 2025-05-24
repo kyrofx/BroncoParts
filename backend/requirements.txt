@@ -1,0 +1,9 @@
+Flask
+python-dotenv  # For managing environment variables via .flaskenv and .env
+Flask-SQLAlchemy
+Flask-Migrate
+Flask-CORS
+# mysqlclient # Switched to PyMySQL
+PyMySQL
+Flask-JWT-Extended
+# Add other dependencies here as we need them, e.g.:
