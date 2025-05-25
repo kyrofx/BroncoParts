@@ -161,14 +161,16 @@ function CreatePart() {
     }, [parentPartId, projectId]); // Add projectId as a dependency
 
     const handlePostProcessChange = (e) => {
-        const { options } = e.target;
-        const selectedIds = [];
-        for (let i = 0, l = options.length; i < l; i += 1) {
-            if (options[i].selected) {
-                selectedIds.push(options[i].value);
+        const { value, checked } = e.target;
+        setPostProcessIds(prevIds => {
+            if (checked) {
+                // Add the ID if checked and not already in the array
+                return prevIds.includes(value) ? prevIds : [...prevIds, value];
+            } else {
+                // Remove the ID if unchecked
+                return prevIds.filter(id => id !== value);
             }
-        }
-        setPostProcessIds(selectedIds);
+        });
     };
 
     const handleSubmit = async (e) => {
@@ -241,7 +243,7 @@ function CreatePart() {
                     />
                 </div>
                 <div className="mb-3">
-                    <label htmlFor="partDescription" className="form-label">Description (Notes for Airtable)</label>
+                    <label htmlFor="partDescription" className="form-label">Description</label>
                     <textarea
                         className="form-control"
                         id="partDescription"
@@ -281,7 +283,7 @@ function CreatePart() {
                     </select>
                 </div>
                 <div className="mb-3">
-                    <label htmlFor="parentPartSelect" className="form-label">Parent Assembly (Optional)</label>
+                    <label htmlFor="parentPartSelect" className="form-label">Parent Assembly</label>
                     <select
                         className="form-select"
                         id="parentPartSelect"
@@ -351,25 +353,32 @@ function CreatePart() {
                         </div>
 
                         <div className="mb-3">
-                            <label htmlFor="postProcessSelect" className="form-label">Post Processes (Ctrl/Cmd + Click to select multiple)</label>
-                            <select
-                                multiple
-                                className="form-select"
-                                id="postProcessSelect"
-                                value={postProcessIds}
-                                onChange={handlePostProcessChange}
-                                size="5" // Show a few items
-                            >
-                                {postProcesses.map(pp => (
-                                    <option key={pp.id} value={pp.id}>
-                                        {pp.name}
-                                    </option>
-                                ))}
-                            </select>
+                            <label className="form-label">Post Processes</label>
+                            <div className="border rounded p-3" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                {postProcesses.length === 0 ? (
+                                    <div className="text-muted">No post processes available</div>
+                                ) : (
+                                    postProcesses.map(pp => (
+                                        <div key={pp.id} className="form-check">
+                                            <input
+                                                className="form-check-input"
+                                                type="checkbox"
+                                                id={`postProcess-${pp.id}`}
+                                                value={pp.id}
+                                                checked={postProcessIds.includes(pp.id.toString())}
+                                                onChange={handlePostProcessChange}
+                                            />
+                                            <label className="form-check-label" htmlFor={`postProcess-${pp.id}`}>
+                                                {pp.name}
+                                            </label>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
                         </div>
                         
                         <div className="mb-3">
-                            <label htmlFor="subteamSelect" className="form-label">Subteam (Optional - will be auto-derived if not selected)</label>
+                            <label htmlFor="subteamSelect" className="form-label">Subteam</label>
                             <select
                                 className="form-select"
                                 id="subteamSelect"
@@ -389,7 +398,7 @@ function CreatePart() {
                         </div>
 
                         <div className="mb-3">
-                            <label htmlFor="subsystemSelect" className="form-label">Subsystem (Optional - will be auto-derived if not selected)</label>
+                            <label htmlFor="subsystemSelect" className="form-label">Subsystem</label>
                             <select
                                 className="form-select"
                                 id="subsystemSelect"

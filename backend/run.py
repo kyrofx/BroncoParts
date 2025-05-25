@@ -45,24 +45,24 @@ def seed_admin():
         db.session.commit()
         print("Admin user created successfully.")
 
-    # Seed Machines
-    default_machines = ["Lathe", "Mill", "Printer A", "Printer B", "Welder"]
-    for machine_name in default_machines:
-        if not Machine.query.filter_by(name=machine_name).first():
-            new_machine = Machine(name=machine_name)
-            db.session.add(new_machine)
-            print(f"Machine '{machine_name}' created.")
+    # # Seed Machines
+    # default_machines = ["Lathe", "Mill", "Printer A", "Printer B", "Welder"]
+    # for machine_name in default_machines:
+    #     if not Machine.query.filter_by(name=machine_name).first():
+    #         new_machine = Machine(name=machine_name)
+    #         db.session.add(new_machine)
+    #         print(f"Machine '{machine_name}' created.")
     
-    # Seed PostProcesses
-    default_post_processes = ["Anodizing", "Powder Coating", "Heat Treatment", "Tumbling", "Assembly"]
-    for pp_name in default_post_processes:
-        if not PostProcess.query.filter_by(name=pp_name).first():
-            new_pp = PostProcess(name=pp_name)
-            db.session.add(new_pp)
-            print(f"PostProcess '{pp_name}' created.")
+    # # Seed PostProcesses
+    # default_post_processes = ["Anodizing", "Powder Coating", "Heat Treatment", "Tumbling", "Assembly"]
+    # for pp_name in default_post_processes:
+    #     if not PostProcess.query.filter_by(name=pp_name).first():
+    #         new_pp = PostProcess(name=pp_name)
+    #         db.session.add(new_pp)
+    #         print(f"PostProcess '{pp_name}' created.")
             
-    db.session.commit()
-    print("Default machines and post-processes seeded.")
+    # db.session.commit()
+    # print("Default machines and post-processes seeded.")
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001, host='0.0.0.0') # Running on a different port than React dev server
