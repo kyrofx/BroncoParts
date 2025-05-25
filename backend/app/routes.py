@@ -1,10 +1,12 @@
 from flask import Blueprint, jsonify, request
 from flask import current_app as app
-from .models import db, Project, Part, User, Order, OrderItem, RegistrationLink # Added RegistrationLink
+from .models import db, Project, Part, User, Order, OrderItem, RegistrationLink, Machine, PostProcess # Added Machine, PostProcess
 from decimal import Decimal
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt # Import JWT functions
 from .decorators import admin_required, editor_or_admin_required, readonly_or_higher_required
 from datetime import datetime
+from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field # Import the Airtable service and new function
+import uuid # Ensure uuid is imported at the top if not already fully present
 
 @app.route('/api/hello')
 @readonly_or_higher_required
@@ -169,12 +171,46 @@ def get_project_tree(project_id):
 @editor_or_admin_required
 def create_part():
     data = request.json
-    required_fields = ['name', 'project_id', 'type']
-    if not data or not all(field in data for field in required_fields):
-        return jsonify(message=f"Error: Missing one or more required fields: {required_fields}"), 400
+    # Updated required fields
+    base_required_fields = ['name', 'project_id', 'type']
+    # Fields specific to 'part' type, not required for 'assembly'
+    part_specific_fields = ['quantity', 'machine_id', 'raw_material', 'post_process_ids'] 
+    
+    part_type = data.get('type', '').lower()
+
+    if not data:
+        return jsonify(message="Error: No input data provided"), 400
+
+    required_fields = base_required_fields
+    # If the type is 'part', then add the part_specific_fields to the list of required fields.
+    if part_type == 'part':
+        required_fields = base_required_fields + part_specific_fields
+    elif part_type == 'assembly':
+        # For assemblies, ensure part-specific fields are not treated as missing if not provided
+        # but also ensure they are not *required*.
+        pass # No additional fields are strictly required for assemblies beyond base_required_fields
+    else: # Invalid part type
+        return jsonify(message="Error: Invalid part type. Must be 'assembly' or 'part'."), 400
+        
+    missing_fields = []
+    for field in required_fields:
+        if field not in data:
+            missing_fields.append(field)
+        # For 'part' type, 'quantity' can be 0, but other specific fields should not be None if key exists.
+        # 'post_process_ids' can be an empty list for 'part' type, but the key must be present.
+        elif data.get(field) is None:
+            if part_type == 'part' and field in ['machine_id', 'raw_material']: # These cannot be None for a 'part'
+                missing_fields.append(field)
+            # 'quantity' can be 0. 'post_process_ids' handled below.
+    
+    if part_type == 'part' and 'post_process_ids' not in data: # Key itself must be present for 'part'
+        missing_fields.append('post_process_ids')
+    
+    if missing_fields:
+        return jsonify(message=f"Error: Missing one or more required fields for type '{part_type}': {missing_fields}"), 400
 
     project_id = data['project_id']
-    part_type = data['type'].lower()
+    # part_type is already defined and lowercased
 
     if part_type not in ['assembly', 'part']:
         return jsonify(message="Error: Invalid part type. Must be 'assembly' or 'part'."), 400
@@ -182,6 +218,34 @@ def create_part():
     project = Project.query.get(project_id)
     if not project:
         return jsonify(message=f"Error: Project with id {project_id} not found"), 404
+
+    # Validate machine_id and post_process_ids only if part_type is 'part'
+    machine = None
+    post_processes = []
+
+    if part_type == 'part':
+        # Validate machine_id
+        machine = Machine.query.get(data['machine_id'])
+        if not machine:
+            return jsonify(message=f"Error: Machine with id {data['machine_id']} not found"), 404
+
+        # Validate post_process_ids
+        if not isinstance(data.get('post_process_ids'), list):
+            return jsonify(message="Error: post_process_ids must be a list for 'part' type."), 400
+        for pp_id in data['post_process_ids']:
+            pp = PostProcess.query.get(pp_id)
+            if not pp:
+                return jsonify(message=f"Error: PostProcess with id {pp_id} not found"), 404
+            post_processes.append(pp)
+        if not post_processes: # Ensure at least one post_process is selected for 'part' type
+            return jsonify(message="Error: At least one post_process_id is required for 'part' type."), 400
+    elif part_type == 'assembly':
+        # For assemblies, these fields are not mandatory at creation through this check
+        # but we need to ensure they are handled if provided or set to defaults later if necessary.
+        # For now, we ensure they are not in 'data' if not expected, or handle them gracefully.
+        # The Part model should allow nullable for these for assemblies.
+        pass
+
 
     parent_id = data.get('parent_id')
     parent_assembly = None
@@ -197,7 +261,6 @@ def create_part():
         if parent_assembly.type != 'assembly':
             return jsonify(message="Error: Parent part must be an assembly."), 400
     elif part_type == 'assembly' and parent_id:
-        # Assemblies can optionally have a parent assembly
         parent_assembly = Part.query.get(parent_id)
         if not parent_assembly:
             return jsonify(message=f"Error: Parent assembly with id {parent_id} not found"), 404
@@ -206,49 +269,124 @@ def create_part():
         if parent_assembly.type != 'assembly':
             return jsonify(message="Error: Parent of an assembly must also be an assembly."), 400
 
-    # New Part Numbering Logic
+    # Part Numbering Logic (remains the same)
     next_numeric_id = None
     type_indicator = ''
-
     if part_type == 'assembly':
         type_indicator = 'A'
         last_assembly_numeric_id = db.session.query(db.func.max(Part.numeric_id)) \
             .filter(Part.project_id == project_id, Part.type == 'assembly').scalar()
         if last_assembly_numeric_id is None:
-            next_numeric_id = 0 # First assembly starts at 0
+            next_numeric_id = 0
         else:
-            # Assemblies increment by 100 from the highest *assembly* numeric_id in the project
-            next_numeric_id = ((last_assembly_numeric_id // 100) + 1) * 100 
-            # This ensures that if last was 0, next is 100. If last was 100, next is 200.
-            # If a part (e.g. 101) somehow has a higher numeric_id than an assembly (e.g. 100), this logic is safe.
-
-    elif part_type == 'part': # parent_assembly is guaranteed to be set and validated here
+            next_numeric_id = ((last_assembly_numeric_id // 100) + 1) * 100
+    elif part_type == 'part':
         type_indicator = 'P'
         last_child_part_numeric_id = db.session.query(db.func.max(Part.numeric_id)) \
             .filter(Part.project_id == project_id, Part.type == 'part', Part.parent_id == parent_assembly.id).scalar()
-        
         if last_child_part_numeric_id is None:
-            # First child part starts at parent_assembly.numeric_id + 1
             next_numeric_id = parent_assembly.numeric_id + 1
         else:
-            # Subsequent child parts increment by 1 from the last child part of that parent
             next_numeric_id = last_child_part_numeric_id + 1
-        
-        # Constraint: Child part's numeric_id should not encroach on the next assembly block.
-        # e.g. if parent is A-0000 (numeric_id 0), children can be P-0001 to P-0099.
-        # Next assembly will be A-0100 (numeric_id 100).
-        if next_numeric_id % 100 == 0: # This means it's 100, 200, etc.
-             # This situation implies we've run out of numbers in the 1-99 range for this parent assembly.
-             # Or, the parent assembly itself is at a X99 number which is not per convention.
-             # This is a system limitation or requires a more complex allocation strategy.
-             return jsonify(message=f"Error: Cannot assign numeric_id {next_numeric_id}. It conflicts with assembly numbering sequence. Maximum 99 parts per assembly allowed with current scheme."), 400
+        if next_numeric_id % 100 == 0:
+             return jsonify(message=f"Error: Cannot assign numeric_id {next_numeric_id}. It conflicts with assembly numbering sequence. Maximum 99 parts per assembly allowed."), 400
 
     generated_part_number = f"{project.prefix}-{type_indicator}-{next_numeric_id:04d}"
 
     if Part.query.filter_by(part_number=generated_part_number).first():
-        return jsonify(message=f"Error: Generated part number {generated_part_number} already exists. Collision detected."), 500
+        return jsonify(message=f"Error: Generated part number {generated_part_number} already exists."), 500
     if Part.query.filter_by(project_id=project_id, numeric_id=next_numeric_id).first():
-        return jsonify(message=f"Error: Generated numeric_id {next_numeric_id} already exists for this project. Collision detected."), 500
+        return jsonify(message=f"Error: Generated numeric_id {next_numeric_id} already exists for this project."), 500
+
+    # Determine Subteam and Subsystem
+    subteam_id = data.get('subteam_id')
+    subsystem_id = data.get('subsystem_id')
+
+    # Logic to find parent by traversing up the hierarchy
+    def get_ancestor_at_level(part, level):
+        current = part
+        for _ in range(level):
+            if current and current.parent_id:
+                current = Part.query.get(current.parent_id)
+            else:
+                return None
+        return current
+
+    if not subteam_id and parent_assembly: # If subteam_id is not provided and there's a parent
+        # Subteam is the 2nd item in breadcrumb (parent of parent_assembly)
+        # For a new part, its direct parent is parent_assembly.
+        # The "breadcrumb" for the new part would be: GrandParent (Subteam) > ParentAssembly (Subsystem) > NewPart
+        # So, Subteam is parent_assembly's parent.
+        # Subsystem is parent_assembly.
+        # The document says: "Subteam is the name/ID of the part that is the 2nd item in the breadcrumb hierarchy (e.g., "Chassis" in "TLA > Chassis > Pedal Box > Front Plate")."
+        # "Subsystem is the name/ID of the part that is the 3rd item in the breadcrumb hierarchy (e.g., "Pedal Box" in "TLA > Chassis > Pedal Box > Front Plate")."
+        # This implies the breadcrumb is for the *newly created part*.
+        # If new part is "Front Plate", parent is "Pedal Box", grandparent is "Chassis".
+        # Level 0: New Part
+        # Level 1: Parent (parent_assembly) -> This would be the Subsystem if hierarchy is deep enough
+        # Level 2: Grandparent -> This would be the Subteam if hierarchy is deep enough
+
+        # If the new part is directly under a top-level assembly (TLA), then TLA is parent_assembly.
+        # "TLA > New Part". parent_assembly = TLA.
+        # Subteam: not applicable or TLA itself?
+        # Subsystem: not applicable or TLA itself?
+        # The logic needs to be robust for varying depths.
+
+        # Let's trace for "TLA > Chassis > Pedal Box > Front Plate" (new part is Front Plate)
+        # parent_assembly = "Pedal Box" (ID of Pedal Box)
+        # subteam_candidate_for_fp = parent of "Pedal Box" = "Chassis"
+        # subsystem_candidate_for_fp = "Pedal Box"
+
+        # If new part is "Pedal Box" (parent is "Chassis")
+        # parent_assembly = "Chassis"
+        # subteam_candidate_for_pb = parent of "Chassis" = "TLA"
+        # subsystem_candidate_for_pb = "Chassis"
+
+        # If new part is "Chassis" (parent is "TLA")
+        # parent_assembly = "TLA"
+        # subteam_candidate_for_ch = parent of "TLA" (None if TLA is top)
+        # subsystem_candidate_for_ch = "TLA"
+
+        # If new part is "TLA" (no parent)
+        # parent_assembly = None. This auto-derivation logic won't run.
+
+        # Revised logic based on "2nd item" and "3rd item" in the new part's breadcrumb:
+        # Breadcrumb: [Ancestor N, ..., Grandparent, Parent, NewPart]
+        # 1st item: (highest ancestor or TLA)
+        # 2nd item: Subteam
+        # 3rd item: Subsystem
+
+        # To get the 2nd item in the breadcrumb for the new part:
+        # We need to find all ancestors of parent_assembly, then pick the correct one.
+        ancestors = []
+        current_ancestor = parent_assembly
+        while current_ancestor:
+            ancestors.insert(0, current_ancestor) # Prepend to get them in order [TLA, Subteam_Candidate, Subsystem_Candidate]
+            if current_ancestor.parent_id:
+                current_ancestor = Part.query.get(current_ancestor.parent_id)
+            else:
+                current_ancestor = None
+        
+        # ancestors list is [GrandestParent, ..., GrandParent, ParentOfParentAssembly]
+        # The full breadcrumb for the new part would be ancestors + [parent_assembly]
+        full_breadcrumb_parts = ancestors + ([parent_assembly] if parent_assembly else [])
+
+        if not subteam_id:
+            if len(full_breadcrumb_parts) >= 2: # Need at least TLA > Subteam
+                subteam_part = full_breadcrumb_parts[1] # 2nd item in breadcrumb
+                subteam_id = subteam_part.id
+            elif len(full_breadcrumb_parts) == 1: # Only TLA exists above new part
+                 # subteam_id = full_breadcrumb_parts[0].id # Or null? Let's assume null if not deep enough.
+                 pass # subteam_id remains None
+
+        if not subsystem_id:
+            if len(full_breadcrumb_parts) >= 3: # Need at least TLA > Subteam > Subsystem
+                subsystem_part = full_breadcrumb_parts[2] # 3rd item in breadcrumb
+                subsystem_id = subsystem_part.id
+            elif len(full_breadcrumb_parts) == 2: # Only TLA > Subteam exists
+                # subsystem_id = full_breadcrumb_parts[1].id # Subteam acts as subsystem? Or null? Let's assume null.
+                pass # subsystem_id remains None
+
 
     new_part = Part(
         numeric_id=next_numeric_id,
@@ -256,15 +394,26 @@ def create_part():
         name=data['name'],
         project_id=project_id,
         type=part_type,
-        parent_id=parent_assembly.id if parent_assembly else None, # Correctly assign parent_id
-        description=data.get('description'),
-        material=data.get('material'),
+        parent_id=parent_assembly.id if parent_assembly else None,
+        description=data.get('description'), # Will be used for Airtable "Notes"
+        material=data.get('material'), # This is the old material field
         revision=data.get('revision'),
-        status=data.get('status', 'designing'),
-        quantity_on_hand=data.get('quantity_on_hand', 0),
-        quantity_on_order=data.get('quantity_on_order', 0),
-        # New fields
-        notes=data.get('notes'),
+        # status=data.get('status', 'designing'), # Old status
+        status="In Design", # New requirement: auto-set to "in design"
+        quantity_on_hand=data.get('quantity_on_hand', 0), # Existing field, may or may not be used by new form
+        quantity_on_order=data.get('quantity_on_order', 0), # Existing field
+
+        # New fields from feature_part_creation_enhancements.md
+        # These are now conditional based on part_type
+        quantity=data['quantity'] if part_type == 'part' else (data.get('quantity') if data.get('quantity') is not None else 1),
+        raw_material=data.get('raw_material') if part_type == 'part' else None,
+        machine_id=data.get('machine_id') if part_type == 'part' else None, # Already validated machine exists for 'part'
+        # post_processes will be handled via relationship append
+        subteam_id=subteam_id,
+        subsystem_id=subsystem_id,
+
+        # Existing fields from NEW_README that might still be relevant or set to default
+        notes=data.get('notes', data.get('description')), # If 'notes' not sent, use 'description'
         source_material=data.get('source_material'),
         have_material=data.get('have_material', False),
         quantity_required=data.get('quantity_required'),
@@ -272,9 +421,61 @@ def create_part():
         priority=data.get('priority', 1),
         drawing_created=data.get('drawing_created', False)
     )
+
+    # Add post_processes only if they are relevant (i.e., for 'part' type and provided)
+    if part_type == 'part' and post_processes:
+        for pp in post_processes:
+            new_part.post_processes.append(pp)
+
     db.session.add(new_part)
     db.session.commit()
+
+    # Logic for adding certain assembly names to Airtable "Subsystem" field options
+    # This applies if new_part is an assembly whose parent is a "Subteam Assembly"
+    # (A "Subteam Assembly" is an assembly directly under a TLA)
+    # Hierarchy: TLA -> Parent (Subteam Assembly) -> new_part (Assembly)
+    if new_part.type.lower() == 'assembly' and new_part.parent_id:
+        parent_assembly = Part.query.get(new_part.parent_id)
+        # Check if parent_assembly exists, is an assembly, and has a parent (grandparent_assembly)
+        if parent_assembly and parent_assembly.type.lower() == 'assembly' and parent_assembly.parent_id:
+            grandparent_assembly = Part.query.get(parent_assembly.parent_id)
+            # Check if grandparent_assembly exists, is an assembly, and has NO parent (i.e., is a TLA)
+            if grandparent_assembly and grandparent_assembly.type.lower() == 'assembly' and not grandparent_assembly.parent_id:
+                # Conditions met: new_part.name should be an option for "Subsystem"
+                app.logger.info(f"Assembly '{new_part.name}' (ID: {new_part.id}) is under Subteam Assembly '{parent_assembly.name}' (ID: {parent_assembly.id}). Attempting to add its name to Airtable Subsystem field options.")
+                try:
+                    success = add_option_to_airtable_subsystem_field(new_part.name)
+                    if success:
+                        app.logger.info(f"Successfully ensured '{new_part.name}' is an option in Airtable Subsystem field.")
+                    else:
+                        app.logger.warning(f"Could not automatically add '{new_part.name}' to Airtable Subsystem field. "
+                                         f"Manual action may be required in Airtable interface. Assembly creation continues normally.")
+                except Exception as e_ats:
+                    app.logger.error(f"Exception when trying to update Airtable Subsystem field options for '{new_part.name}': {e_ats}", exc_info=True)
+                    app.logger.warning(f"Manual action required: Add '{new_part.name}' to Subsystem field options in Airtable if needed.")
+
+    # Airtable Integration Call - Sync record to Airtable ONLY for 'part' type AND only for the first project created
+    if new_part.type.lower() == 'part':
+        # Check if this part belongs to the first project created
+        first_project = Project.query.order_by(Project.created_at.asc()).first()
+        if first_project and new_part.project_id == first_project.id:
+            app.logger.info(f"Attempting to sync part {new_part.part_number} ({new_part.name}) to Airtable (first project: {first_project.name}).")
+            try:
+                sync_result = sync_part_to_airtable(new_part)
+                if sync_result:
+                    app.logger.info(f"Part {new_part.id} synced to Airtable. Record ID: {sync_result.get('id')}")
+                    # Optionally, you could add the airtable record id to your response or database
+                    # part_data_response['airtable_record_id'] = sync_result.get('id')
+                else:
+                    app.logger.warning(f"Airtable sync failed or was skipped for part {new_part.id}. Check logs for details.")
+            except Exception as e:
+                app.logger.error(f"Airtable sync encountered an exception for part {new_part.id}: {e}", exc_info=True)
+        else:
+            app.logger.info(f"Skipping Airtable sync for part {new_part.part_number} ({new_part.name}) - not from the first project created.")
+    elif new_part.type.lower() == 'assembly':
+        app.logger.info(f"Skipping Airtable data sync for assembly: {new_part.part_number} ({new_part.name}). Subsystem option update (if applicable) was handled separately.")
     
+    # Prepare response, including new fields
     part_data_response = {
         'id': new_part.id,
         'numeric_id': new_part.numeric_id,
@@ -296,6 +497,17 @@ def create_part():
         'cut_length': new_part.cut_length,
         'priority': new_part.priority,
         'drawing_created': new_part.drawing_created,
+        # New fields response
+        'quantity': new_part.quantity,
+        'raw_material': new_part.raw_material,
+        'machine_id': new_part.machine_id,
+        'machine_name': machine.name if machine else None, # Include machine name
+        'post_process_ids': [pp.id for pp in new_part.post_processes],
+        'post_process_names': [pp.name for pp in new_part.post_processes], # Include post_process names
+        'subteam_id': new_part.subteam_id,
+        'subsystem_id': new_part.subsystem_id,
+        'subteam_name': Part.query.get(new_part.subteam_id).name if new_part.subteam_id else None,
+        'subsystem_name': Part.query.get(new_part.subsystem_id).name if new_part.subsystem_id else None,
         'created_at': new_part.created_at.isoformat(),
         'updated_at': new_part.updated_at.isoformat()
     }
@@ -303,6 +515,130 @@ def create_part():
         part_data_response['parent_part_number'] = parent_assembly.part_number
 
     return jsonify(message="Part created successfully", part=part_data_response), 201
+
+# --- Machine Routes ---
+@app.route('/api/machines', methods=['GET'])
+@readonly_or_higher_required
+def get_machines():
+    machines = Machine.query.all()
+    return jsonify(machines=[{'id': m.id, 'name': m.name} for m in machines])
+
+# --- PostProcess Routes ---
+@app.route('/api/post-processes', methods=['GET'])
+@readonly_or_higher_required
+def get_post_processes():
+    post_processes = PostProcess.query.all()
+    return jsonify(post_processes=[{'id': p.id, 'name': p.name} for p in post_processes])
+
+# --- Project Specific Assemblies ---
+@app.route('/api/projects/<int:project_id>/assemblies', methods=['GET'])
+@readonly_or_higher_required
+def get_project_assemblies(project_id):
+    project = Project.query.get_or_404(project_id)
+    assemblies = Part.query.filter_by(project_id=project.id, type='assembly').order_by(Part.name).all()
+    return jsonify(assemblies=[{'id': a.id, 'name': a.name, 'part_number': a.part_number} for a in assemblies])
+
+@app.route('/api/parts/derived-hierarchy-info', methods=['GET'])
+@readonly_or_higher_required
+def get_derived_hierarchy_info():
+    parent_assembly_id_str = request.args.get('parent_assembly_id')
+    if not parent_assembly_id_str:
+        return jsonify(message="Error: parent_assembly_id is required"), 400
+
+    try:
+        parent_assembly_id = int(parent_assembly_id_str)
+    except ValueError:
+        return jsonify(message="Error: parent_assembly_id must be an integer"), 400
+
+    parent_assembly = Part.query.get(parent_assembly_id)
+    if not parent_assembly:
+        return jsonify(message=f"Error: Parent assembly with id {parent_assembly_id} not found"), 404
+    
+    if parent_assembly.type.lower() != 'assembly':
+        return jsonify(message=f"Error: Part with id {parent_assembly_id} (name: {parent_assembly.name}) is not an assembly type."), 400
+
+    derived_subteam_id = None
+    derived_subteam_name = None
+    derived_subsystem_id = None
+    derived_subsystem_name = None
+
+    ancestors_of_parent_assembly = []
+    current_ancestor = parent_assembly
+    
+    # Build the breadcrumb for parent_assembly: [TLA, ..., Grandparent_of_Parent, Parent_of_Parent, ParentAssemblyItself]
+    visited_in_path = set() # For cycle detection in current path
+    while current_ancestor:
+        if current_ancestor.id in visited_in_path:
+            app.logger.error(f"Cycle detected involving part {current_ancestor.id} while building breadcrumb for {parent_assembly.id}")
+            # Depending on desired behavior, either return error or break and proceed with partial breadcrumb
+            return jsonify(message=f"Error: Cycle detected in hierarchy involving part {current_ancestor.name} ({current_ancestor.id})"), 500
+        
+        visited_in_path.add(current_ancestor.id)
+        ancestors_of_parent_assembly.insert(0, current_ancestor)
+        
+        if current_ancestor.parent_id:
+            if current_ancestor.parent_id == current_ancestor.id: 
+                app.logger.error(f"Cycle detected: Part {current_ancestor.id} is its own parent.")
+                return jsonify(message=f"Error: Part {current_ancestor.name} ({current_ancestor.id}) is its own parent."), 500
+            
+            parent_of_current = Part.query.get(current_ancestor.parent_id)
+            # If parent_of_current is None (broken link) or already processed in this path (cycle), stop.
+            if not parent_of_current: # Broken foreign key
+                 app.logger.warning(f"Broken parent link for part {current_ancestor.id} (parent_id: {current_ancestor.parent_id})")
+                 break 
+            current_ancestor = parent_of_current
+        else:
+            current_ancestor = None
+            
+    # ancestors_of_parent_assembly is the breadcrumb for the selected parent_assembly.
+    # For a new part created under parent_assembly, its breadcrumb would be: ancestors_of_parent_assembly + [NewPart]
+    # Subteam for NewPart = 2nd item of `[TLA, Chassis, PedalBox]` (i.e., ancestors_of_parent_assembly[1])
+    # Subsystem for NewPart = 3rd item of `[TLA, Chassis, PedalBox]` (i.e., ancestors_of_parent_assembly[2])
+
+    if len(ancestors_of_parent_assembly) >= 2:
+        subteam_part = ancestors_of_parent_assembly[1] # This is the 2nd item of parent_assembly's breadcrumb
+        derived_subteam_id = subteam_part.id
+        derived_subteam_name = subteam_part.name
+
+    if len(ancestors_of_parent_assembly) >= 3:
+        subsystem_part = ancestors_of_parent_assembly[2] # This is the 3rd item of parent_assembly's breadcrumb
+        derived_subsystem_id = subsystem_part.id
+        derived_subsystem_name = subsystem_part.name
+    
+    # If the parent_assembly itself is the subteam (e.g. TLA > parent_assembly (Subteam) > NewPart)
+    # then len(ancestors_of_parent_assembly) would be 1 (e.g. [TLA]), and parent_assembly is TLA.
+    # The new part's breadcrumb: [TLA, NewPart]. Subteam is TLA. Subsystem is TLA.
+    # The current logic:
+    # if len is 1, e.g. [TLA]. parent_assembly is TLA.
+    #   derived_subteam_id = None
+    #   derived_subsystem_id = None
+    # This needs to align with the definition: "Subteam is the 2nd item", "Subsystem is the 3rd item".
+    # If the new part's breadcrumb is [TLA, NewPart], there is no 2nd or 3rd item *before* NewPart.
+    # The auto-derivation in `create_part` uses `full_breadcrumb_parts` which is `ancestors + [parent_assembly]`.
+    # Let's stick to the definition from `feature_part_creation_enhancements.md` for the *new part's* hierarchy.
+    # If `parent_assembly` is the TLA (Top Level Assembly), its `ancestors_of_parent_assembly` list is just `[TLA]`.
+    # The new part's breadcrumb: `[TLA, NewPart]`.
+    #   Subteam (2nd item of `[TLA, NewPart]`): `NewPart` - this is not right. It should be an *ancestor*.
+    #   The definition "2nd item in the breadcrumb hierarchy" refers to the *ancestor* hierarchy.
+    #
+    # Let's re-verify the `create_part` logic:
+    # `ancestors = []` (ancestors of `parent_assembly`)
+    # `current_ancestor = parent_assembly`
+    # `while current_ancestor: ancestors.insert(0, current_ancestor); current_ancestor = current_ancestor.parent`
+    # `full_breadcrumb_parts = ancestors` (this list IS the breadcrumb of `parent_assembly`, e.g. [TLA, Chassis, PedalBox])
+    # if not subteam_id:
+    #   if len(full_breadcrumb_parts) >= 2: subteam_id = full_breadcrumb_parts[1].id (Chassis)
+    # if not subsystem_id:
+    #   if len(full_breadcrumb_parts) >= 3: subsystem_id = full_breadcrumb_parts[2].id (PedalBox)
+    # This is correct. The `ancestors_of_parent_assembly` in *this* endpoint is equivalent to `full_breadcrumb_parts` in `create_part`.
+    # So the logic `ancestors_of_parent_assembly[1]` and `ancestors_of_parent_assembly[2]` is correct.
+
+    return jsonify({
+        "derived_subteam_id": derived_subteam_id,
+        "derived_subteam_name": derived_subteam_name,
+        "derived_subsystem_id": derived_subsystem_id,
+        "derived_subsystem_name": derived_subsystem_name
+    }), 200
 
 @app.route('/api/parts', methods=['GET'])
 @readonly_or_higher_required
@@ -397,12 +733,12 @@ def get_part(part_id):
     part = Part.query.get_or_404(part_id)
     part_data_response = {
         'id': part.id,
-        'numeric_id': part.numeric_id, # Added numeric_id
+        'numeric_id': part.numeric_id, 
         'part_number': part.part_number,
         'name': part.name,
         'project_id': part.project_id,
-        'type': part.type, # Added type
-        'parent_id': part.parent_id, # Added parent_id
+        'type': part.type, 
+        'parent_id': part.parent_id, 
         'description': part.description,
         'material': part.material,
         'revision': part.revision,
@@ -416,6 +752,17 @@ def get_part(part_id):
         'cut_length': part.cut_length,
         'priority': part.priority,
         'drawing_created': part.drawing_created,
+        # New fields for GET response
+        'quantity': part.quantity,
+        'raw_material': part.raw_material,
+        'machine_id': part.machine_id,
+        'machine_name': part.machine.name if part.machine else None,
+        'post_process_ids': [pp.id for pp in part.post_processes],
+        'post_process_names': [pp.name for pp in part.post_processes],
+        'subteam_id': part.subteam_id,
+        'subsystem_id': part.subsystem_id,
+        'subteam_name': part.subteam.name if part.subteam else None, # Use relationship
+        'subsystem_name': part.subsystem.name if part.subsystem else None, # Use relationship
         'created_at': part.created_at.isoformat(),
         'updated_at': part.updated_at.isoformat()
     }
@@ -446,21 +793,19 @@ def update_part(part_id):
     if not data:
         return jsonify(message="Error: No input data provided"), 400
 
-    # Fields that can be updated: name, description, material, revision, status, quantities, parent_id
-    # and new fields: notes, source_material, have_material, quantity_required, cut_length, priority, drawing_created
-    # Part number, numeric_id, project_id, type should generally not be changed after creation
-    # or require special handling.
-
+    # Standard fields
     part.name = data.get('name', part.name)
-    part.description = data.get('description', part.description)
+    part.description = data.get('description', part.description) # Used for Airtable Notes
     part.material = data.get('material', part.material)
     part.revision = data.get('revision', part.revision)
-    part.status = data.get('status', part.status)
+    # part.status = data.get('status', part.status) # Status is "in design" on create, can it be updated?
+                                                 # Per Airtable, it's a dropdown, so likely updatable.
+    if 'status' in data: # Allow status updates
+        part.status = data['status']
+
     part.quantity_on_hand = data.get('quantity_on_hand', part.quantity_on_hand)
     part.quantity_on_order = data.get('quantity_on_order', part.quantity_on_order)
-
-    # Update new fields
-    part.notes = data.get('notes', part.notes)
+    part.notes = data.get('notes', part.notes if part.notes else part.description) # Update notes, fallback to description
     part.source_material = data.get('source_material', part.source_material)
     part.have_material = data.get('have_material', part.have_material)
     part.quantity_required = data.get('quantity_required', part.quantity_required)
@@ -468,29 +813,77 @@ def update_part(part_id):
     part.priority = data.get('priority', part.priority)
     part.drawing_created = data.get('drawing_created', part.drawing_created)
 
+    # New enhancement fields
+    if 'quantity' in data:
+        part.quantity = data['quantity']
+    if 'raw_material' in data:
+        part.raw_material = data['raw_material']
+    
+    if 'machine_id' in data:
+        machine = Machine.query.get(data['machine_id'])
+        if not machine:
+            return jsonify(message=f"Error: Machine with id {data['machine_id']} not found"), 404
+        part.machine_id = data['machine_id']
+
+    if 'post_process_ids' in data:
+        if not isinstance(data['post_process_ids'], list):
+            return jsonify(message="Error: post_process_ids must be a list."), 400
+        
+        new_post_processes = []
+        for pp_id in data['post_process_ids']:
+            pp = PostProcess.query.get(pp_id)
+            if not pp:
+                return jsonify(message=f"Error: PostProcess with id {pp_id} not found"), 404
+            new_post_processes.append(pp)
+        if not new_post_processes: # Assuming if sent, it should not be empty, matching create logic
+             return jsonify(message="Error: At least one post_process_id is required if 'post_process_ids' is provided."), 400
+        part.post_processes = new_post_processes
+
+    if 'subteam_id' in data: # Allow manual override of subteam
+        if data['subteam_id'] is None:
+            part.subteam_id = None
+        else:
+            subteam_part = Part.query.get(data['subteam_id'])
+            if not subteam_part:
+                 return jsonify(message=f"Error: Subteam part with id {data['subteam_id']} not found"), 404
+            if subteam_part.type != 'assembly': # Assuming subteams are assemblies
+                 return jsonify(message=f"Error: Subteam part must be an assembly."), 400
+            part.subteam_id = data['subteam_id']
+
+    if 'subsystem_id' in data: # Allow manual override of subsystem
+        if data['subsystem_id'] is None:
+            part.subsystem_id = None
+        else:
+            subsystem_part = Part.query.get(data['subsystem_id'])
+            if not subsystem_part:
+                 return jsonify(message=f"Error: Subsystem part with id {data['subsystem_id']} not found"), 404
+            if subsystem_part.type != 'assembly': # Assuming subsystems are assemblies
+                 return jsonify(message=f"Error: Subsystem part must be an assembly."), 400
+            part.subsystem_id = data['subsystem_id']
+            
+    # Parent ID change logic (existing)
     if 'parent_id' in data:
         new_parent_id = data['parent_id']
         if new_parent_id is not None:
-            if new_parent_id == part.id: # Prevent self-parenting
+            if new_parent_id == part.id: 
                  return jsonify(message="Error: Part cannot be its own parent."), 400
             parent_part = Part.query.get(new_parent_id)
             if not parent_part:
                 return jsonify(message=f"Error: New parent part with id {new_parent_id} not found"), 404
             if parent_part.project_id != part.project_id:
                  return jsonify(message="Error: New parent part must belong to the same project."), 400
-            # TODO: Add cycle detection if allowing deep hierarchies and parent changes.
             part.parent_id = new_parent_id
-        else: # Setting parent_id to null
+        else: 
             part.parent_id = None
             
-    # Warn if trying to change immutable fields like type or project_id without specific logic
-    if 'type' in data and data['type'] != part.type:
-        return jsonify(message="Error: Part type cannot be changed after creation through this endpoint."), 400
-    if 'project_id' in data and data['project_id'] != part.project_id:
-        return jsonify(message="Error: Part project_id cannot be changed after creation through this endpoint."), 400
-    
     db.session.commit()
     
+    # Re-fetch machine and post-processes for the response after commit
+    final_machine = Machine.query.get(part.machine_id) if part.machine_id else None
+    final_post_processes = part.post_processes 
+    final_subteam = Part.query.get(part.subteam_id) if part.subteam_id else None
+    final_subsystem = Part.query.get(part.subsystem_id) if part.subsystem_id else None
+
     part_data_response = {
         'id': part.id,
         'numeric_id': part.numeric_id,
@@ -512,7 +905,18 @@ def update_part(part_id):
         'cut_length': part.cut_length,
         'priority': part.priority,
         'drawing_created': part.drawing_created,
-        'created_at': part.created_at.isoformat(), # Ensure created_at is also present
+        # New fields in response
+        'quantity': part.quantity,
+        'raw_material': part.raw_material,
+        'machine_id': part.machine_id,
+        'machine_name': final_machine.name if final_machine else None,
+        'post_process_ids': [pp.id for pp in final_post_processes],
+        'post_process_names': [pp.name for pp in final_post_processes],
+        'subteam_id': part.subteam_id,
+        'subsystem_id': part.subsystem_id,
+        'subteam_name': final_subteam.name if final_subteam else None,
+        'subsystem_name': final_subsystem.name if final_subsystem else None,
+        'created_at': part.created_at.isoformat(),
         'updated_at': part.updated_at.isoformat()
     }
     if part.parent_id:
@@ -743,7 +1147,7 @@ def update_user(user_id):
     data = request.get_json()
 
     if not data:
-        return jsonify(message="Error: No input data provided"), 400
+        return jsonify(message="Error: No input data provided", data=data), 400
 
     # Permission check: Only admin can edit users
     if current_jwt_payload.get('permission') != 'admin':
@@ -1164,7 +1568,7 @@ def update_order_item(order_id, item_id):
         try:
             item.unit_price = Decimal(str(data['unit_price']))
         except:
-            return jsonify(message="Error: Invalid unit_price format"), 400
+            return jsonify(message="Error: Invalid unit_price format"),  400
     
     # Recalculate order total_amount
     new_item_total = item.unit_price * item.quantity
@@ -1210,7 +1614,7 @@ def create_registration_link():
     data = request.json
     required_fields = ['max_uses', 'default_permission']
     if not data or not all(field in data for field in required_fields):
-        return jsonify(message=f"Error: Missing one or more required fields: {required_fields}"), 400
+        return jsonify(message=f"Error: Missing one or more required fields: {required_fields}"),  400
 
     current_user_id = get_jwt().get('sub') # Get current admin user's ID
 
@@ -1355,6 +1759,7 @@ def get_registration_link_details(link_identifier):
 
 @app.route('/api/register/<link_identifier>', methods=['POST'])
 def register_user_via_link(link_identifier):
+    data = request.json # Define data from request.json
     link = RegistrationLink.query.filter(
         (RegistrationLink.token == link_identifier) | (RegistrationLink.custom_path == link_identifier)
     ).first()
@@ -1362,63 +1767,125 @@ def register_user_via_link(link_identifier):
     if not link:
         return jsonify(message="Registration link not found."), 404
     
-    if not link.is_currently_valid_for_registration():
-        return jsonify(message="Registration link is invalid, expired, or has reached its maximum uses."), 403
+    # Corrected method call: is_currently_valid_for_registration returns a tuple (bool, str)
+    is_valid, message = link.is_currently_valid_for_registration()
+    if not is_valid:
+        return jsonify(message=message), 403
 
-    data = request.json
-    required_fields = ['password', 'first_name', 'last_name']
-    # Username and email might be fixed by the link
-    if not link.fixed_username:
-        required_fields.append('username')
-    if not link.fixed_email:
-        required_fields.append('email')
-        
-    if not data or not all(field in data for field in required_fields):
-        missing = [field for field in required_fields if field not in data]
-        return jsonify(message=f"Error: Missing one or more required fields: {', '.join(missing)}"), 400
+    # Extract user details from the link if max_uses is 1
+    if link.max_uses == 1:
+        fixed_username = link.fixed_username
+        fixed_email = link.fixed_email
+    else:
+        fixed_username = None
+        fixed_email = None
 
-    username = link.fixed_username if link.fixed_username else data['username']
-    email = link.fixed_email if link.fixed_email else data['email']
+    # Register the user with the details from the link
+    new_user = User(
+        username=fixed_username or f"user_{uuid.uuid4().hex[:8]}", # Generate a random username if not fixed
+        email=fixed_email or f"email_{uuid.uuid4().hex[:8]}@example.com", # Generate a random email if not fixed
+        first_name=data.get('first_name', ''),
+        last_name=data.get('last_name', ''),
+        permission=link.default_permission,
+        enabled=link.auto_enable_new_users,  # Enable user if the link setting allows
+        is_approved=True, # Approve the user since registration is via link
+        requested_at=datetime.utcnow(), # Set request time
+        registered_via_link_id=link.id # Associate user with the link
+    )
+    # Password must be provided in the request for the new user
+    if 'password' not in data or not data['password']:
+        return jsonify(message="Error: Password is required for the new user."), 400
+    new_user.set_password(data['password'])
+    
+    db.session.add(new_user)
+    link.current_uses += 1 # Increment current_uses
+    # Deactivate link if uses are exhausted or if it's a single-use link that's now used
+    if link.current_uses >= link.max_uses:
+        link.is_active = False
+    
+    db.session.commit()
+    
+    user_data = {
+        'id': new_user.id,
+        'username': new_user.username,
+        'email': new_user.email,
+        'first_name': new_user.first_name,
+        'last_name': new_user.last_name,
+        'permission': new_user.permission,
+        'enabled': new_user.enabled,
+        'is_approved': new_user.is_approved,
+        'created_at': new_user.created_at.isoformat()
+    }
+    return jsonify(message=f"User {new_user.username} created successfully via registration link.", user=user_data), 201
 
-    if User.query.filter_by(username=username).first():
-        return jsonify(message="Error: Username already exists"), 409
-    if User.query.filter_by(email=email).first(): # Corrected this line
-        return jsonify(message="Error: Email already exists"), 409
+@app.route('/api/admin/create_user_via_link', methods=['POST'])
+@admin_required # Assuming admin rights are needed to create users this way
+def admin_create_user_via_link():
+    data = request.json # Add this line to define data
+    link_token = data.get('token')
+    # Ensure 'uuid' is accessible, e.g. by having 'import uuid' at the module level.
+    # If 'fixed_username' or 'fixed_email' can be None, ensure the logic handles it.
+    # Example: username = fixed_username if fixed_username else f"user_{uuid.uuid4().hex[:8]}"
+    # Make sure fixed_username and fixed_email are defined before use.
+    # The original errors indicated 'data' was not defined for lines like:
+    # first_name=data.get('first_name', ''),
+    # last_name=data.get('last_name', ''),
+    # new_user.set_password(data['password'])
+    # This implies 'data' should be sourced from request.json as added above.
+    # The uuid errors should be resolved if 'import uuid' is at the top of the file.
 
-    try:
-        new_user = User(
-            username=username,
-            email=email,
-            first_name=data['first_name'],
-            last_name=data['last_name'],
-            permission=link.default_permission,
-            enabled=link.auto_enable_new_users,
-            is_approved=link.auto_enable_new_users # If auto-enabled, assume also auto-approved by the link's nature
-        )
-        new_user.set_password(data['password'])
-        
-        link.current_uses += 1
-        if link.max_uses != -1 and link.current_uses >= link.max_uses:
-            link.is_active = False # Deactivate link if max uses reached
+    if not link_token:
+        return jsonify(message="Error: Registration token is required."), 400
 
-        db.session.add(new_user)
-        db.session.add(link) # To save changes to current_uses and is_active
-        db.session.commit()
-        
-        user_data = {
-            'id': new_user.id,
-            'username': new_user.username,
-            'email': new_user.email,
-            'first_name': new_user.first_name,
-            'last_name': new_user.last_name,
-            'permission': new_user.permission,
-            'enabled': new_user.enabled,
-            'is_approved': new_user.is_approved,
-            'created_at': new_user.created_at.isoformat()
-        }
-        # Do not return a token here unless the user is also auto-logged-in
-        return jsonify(message="User registered successfully via link.", user=user_data), 201
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error registering user via link {link_identifier}: {e}")
-        return jsonify(message="Internal server error during registration."), 500
+    link = RegistrationLink.query.filter_by(token=link_token).first()
+
+    # Corrected method call: is_currently_valid_for_registration returns a tuple (bool, str)
+    is_valid, message = link.is_currently_valid_for_registration() 
+    if not link or not is_valid:
+        return jsonify(message=f"Error: Invalid or expired registration token. {message}"), 400
+
+    # Use details from the link or generate defaults
+    # Assuming fixed_username and fixed_email might come from the link object or be predefined
+    # For this example, let's assume they might be part of the link's purpose or are passed in request
+    fixed_username = data.get('username', link.default_username) # Or however these are determined
+    fixed_email = data.get('email', link.default_email) # Or however these are determined
+    
+    # Check for existing user by username or email if they are provided
+    if fixed_username and User.query.filter_by(username=fixed_username).first():
+        return jsonify(message=f"Error: Username '{fixed_username}' already exists"), 409
+    if fixed_email and User.query.filter_by(email=fixed_email).first():
+        return jsonify(message=f"Error: Email '{fixed_email}' already exists"), 409
+
+    new_user = User(
+        username=fixed_username or f"user_{uuid.uuid4().hex[:8]}",
+        email=fixed_email or f"email_{uuid.uuid4().hex[:8]}@example.com",
+        first_name=data.get('first_name', link.default_first_name or ''), # Use link defaults if available
+        last_name=data.get('last_name', link.default_last_name or ''),   # Use link defaults if available
+        permission=link.default_permission or 'readonly', # Use link default or fallback
+        enabled=True, 
+        is_approved=True, # Users created via admin link are pre-approved
+        registered_via_link_id=link.id
+    )
+    # Password must be provided in the request for the new user
+    if 'password' not in data or not data['password']:
+        return jsonify(message="Error: Password is required for the new user."), 400
+    new_user.set_password(data['password'])
+    
+    db.session.add(new_user)
+    link.current_uses += 1 # Increment current_uses
+    if link.current_uses >= link.max_uses: # Check if uses are exhausted
+        link.is_active = False # Deactivate link if uses are exhausted
+    db.session.commit()
+    
+    user_data = {
+        'id': new_user.id,
+        'username': new_user.username,
+        'email': new_user.email,
+        'first_name': new_user.first_name,
+        'last_name': new_user.last_name,
+        'permission': new_user.permission,
+        'enabled': new_user.enabled,
+        'is_approved': new_user.is_approved,
+        'created_at': new_user.created_at.isoformat()
+    }
+    return jsonify(message=f"User {new_user.username} created successfully via registration link.", user=user_data), 201

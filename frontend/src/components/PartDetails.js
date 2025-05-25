@@ -46,7 +46,7 @@ const buildBreadcrumbData = async (part, currentBreadcrumbs = []) => {
 function PartDetails() {
     const { partId } = useParams();
     const [part, setPart] = useState(null);
-    const [project, setProject] = useState(null); // Added project state
+    const [project, setProject] = useState(null);
     const [breadcrumbParts, setBreadcrumbParts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -54,25 +54,23 @@ function PartDetails() {
     const navigate = useNavigate();
 
     useEffect(() => {
-        const fetchDetails = async () => { // Renamed for clarity
+        const fetchDetails = async () => {
             try {
                 setLoading(true);
                 setError('');
-                setProject(null); // Reset project state on new fetch
+                setProject(null);
 
                 const response = await api.get(`/parts/${partId}`);
-                const fetchedPart = response.data.part;
+                const fetchedPart = response.data.part; // Assuming the part data is in response.data.part
                 setPart(fetchedPart);
 
                 if (fetchedPart) {
-                    // Fetch project details if project_id exists
                     if (fetchedPart.project_id) {
                         try {
                             const projectResponse = await api.get(`/projects/${fetchedPart.project_id}`);
-                            setProject(projectResponse.data.project); // Assuming API returns { project: ... }
+                            setProject(projectResponse.data.project);
                         } catch (projErr) {
                             console.error("Failed to fetch project details for part:", projErr);
-                            // Optionally set an error related to project fetching or leave project as null
                         }
                     }
 
@@ -81,11 +79,16 @@ function PartDetails() {
                         .then(crumbs => setBreadcrumbParts(crumbs))
                         .catch(err => console.error("Error building breadcrumbs:", err));
                 } else {
-                    setError('Part not found.'); // Handle case where part is not found
+                    setError('Part not found.');
                 }
 
             } catch (err) {
-                setError('Failed to fetch part details. ' + (err.response?.data?.message || err.message));
+                // Use a more specific check for part not found, e.g., based on status code
+                if (err.response && err.response.status === 404) {
+                    setError('Part not found.');
+                } else {
+                    setError('Failed to fetch part details. ' + (err.response?.data?.message || err.message));
+                }
                 console.error(err);
             } finally {
                 setLoading(false);
@@ -114,12 +117,25 @@ function PartDetails() {
     const canEdit = user?.permissions?.includes('admin') || user?.permissions?.includes('engineer');
     const canDelete = user?.permissions?.includes('admin');
 
+    // Updated partDetailsArray to include new fields
     const partDetailsArray = [
         project && { label: 'Project', value: <RouterLink to={`/projects/${project.id}`}>{project.name}</RouterLink> },
         { label: 'Part Number', value: part?.part_number },
-        { label: 'Description', value: part?.description || part?.name },
-        { label: 'Notes', value: part?.notes },
-    ].filter(Boolean);
+        { label: 'Name', value: part?.name }, // Added Name explicitly
+        { label: 'Description', value: part?.description }, // This is for Airtable Notes
+        { label: 'Type', value: part?.type },
+        { label: 'Status', value: part?.status },
+        part?.type === 'part' && { label: 'Quantity', value: part?.quantity },
+        part?.type === 'part' && part?.machine && { label: 'Machine', value: part.machine.name },
+        part?.type === 'part' && { label: 'Raw Material', value: part?.raw_material },
+        part?.type === 'part' && part?.post_processes && part.post_processes.length > 0 && {
+            label: 'Post Processes',
+            value: part.post_processes.map(pp => pp.name).join(', ')
+        },
+        part?.subteam && { label: 'Subteam', value: <RouterLink to={`/assemblies/${part.subteam.id}`}>{part.subteam.name}</RouterLink> },
+        part?.subsystem && { label: 'Subsystem', value: <RouterLink to={`/assemblies/${part.subsystem.id}`}>{part.subsystem.name}</RouterLink> },
+        // { label: \'Notes\', value: part?.notes }, // part.description is used for Notes as per spec
+    ].filter(Boolean); // Filter out any null/false entries (e.g. if part.type is not 'part')
 
 
     return (

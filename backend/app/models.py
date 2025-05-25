@@ -5,6 +5,13 @@ import secrets
 import datetime
 from sqlalchemy.orm import validates
 
+# Association table for Part and PostProcess
+# Ensure db.Table is used if Table is not directly imported from sqlalchemy
+part_post_processes = db.Table('part_post_processes', db.Model.metadata,
+    db.Column('part_id', db.Integer, db.ForeignKey('parts.id'), primary_key=True),
+    db.Column('post_process_id', db.Integer, db.ForeignKey('post_processes.id'), primary_key=True)
+)
+
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -121,6 +128,26 @@ class Project(db.Model):
     def __repr__(self):
         return f'<Project {self.name}>'
 
+class Machine(db.Model):
+    __tablename__ = 'machines'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Machine {self.name}>'
+
+class PostProcess(db.Model):
+    __tablename__ = 'post_processes'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    def __repr__(self):
+        return f'<PostProcess {self.name}>'
+
 class Part(db.Model):
     __tablename__ = 'parts'
     id = db.Column(db.Integer, primary_key=True)
@@ -131,9 +158,9 @@ class Part(db.Model):
 
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
-    material = db.Column(db.String(50))
+    material = db.Column(db.String(50)) # Existing material field, potentially for CAD material.
     revision = db.Column(db.String(10))
-    status = db.Column(db.String(50), default='designing') # Default status to 'designing'
+    status = db.Column(db.String(50), nullable=False, default="in design") # Updated as per new reqs
     quantity_on_hand = db.Column(db.Integer, default=0)
     quantity_on_order = db.Column(db.Integer, default=0)
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=False)
@@ -142,6 +169,7 @@ class Part(db.Model):
     type = db.Column(db.String(10), nullable=False)  # 'assembly' or 'part'
     parent_id = db.Column(db.Integer, db.ForeignKey('parts.id'), nullable=True)
     children = db.relationship('Part',
+                               foreign_keys=[parent_id], # Specify the foreign key for the self-referential relationship
                                backref=db.backref('parent', remote_side=[id]),
                                lazy='dynamic')
 
@@ -153,6 +181,25 @@ class Part(db.Model):
     cut_length = db.Column(db.String(50), nullable=True, default='')
     priority = db.Column(db.Integer, default=1, nullable=False) # 0=High, 1=Normal, 2=Low
     drawing_created = db.Column(db.Boolean, default=False, nullable=False)
+
+    # New fields from feature_part_creation_enhancements.md
+    quantity = db.Column(db.Integer, nullable=False) # Manufacturing quantity
+    raw_material = db.Column(db.String(255), nullable=True) # Custom text for raw material - Made nullable
+
+    machine_id = db.Column(db.Integer, db.ForeignKey('machines.id'), nullable=True) # FK to Machine table
+    machine = db.relationship('Machine', backref=db.backref('parts', lazy='dynamic'))
+
+    post_processes = db.relationship('PostProcess', secondary=part_post_processes,
+                                     lazy='subquery', backref=db.backref('parts', lazy=True))
+
+    subteam_id = db.Column(db.Integer, db.ForeignKey('parts.id'), nullable=True)
+    subsystem_id = db.Column(db.Integer, db.ForeignKey('parts.id'), nullable=True)
+
+    # Relationships for subteam and subsystem (self-referential to Part)
+    # Using primaryjoin to be explicit for self-referential FKs
+    subteam = db.relationship('Part', foreign_keys=[subteam_id], remote_side=[id], backref='part_subteams', lazy='joined')
+    subsystem = db.relationship('Part', foreign_keys=[subsystem_id], remote_side=[id], backref='part_subsystems', lazy='joined')
+
 
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)

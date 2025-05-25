@@ -9,8 +9,19 @@ function CreatePart() {
     const [projectId, setProjectId] = useState('');
     const [parentPartId, setParentPartId] = useState('');
     const [partType, setPartType] = useState('part'); // Added partType state, default to 'part'
+    const [quantity, setQuantity] = useState(1); // New state for Quantity
+    const [machineId, setMachineId] = useState(''); // New state for Machine
+    const [subteamId, setSubteamId] = useState(''); // New state for Subteam
+    const [subsystemId, setSubsystemId] = useState(''); // New state for Subsystem
+    const [rawMaterial, setRawMaterial] = useState(''); // New state for Raw Material
+    const [postProcessIds, setPostProcessIds] = useState([]); // New state for Post Processes (array of IDs)
+    
     const [projects, setProjects] = useState([]);
-    const [parts, setParts] = useState([]);
+    const [parts, setParts] = useState([]); // Assemblies for parent part selection
+    const [machines, setMachines] = useState([]); // New state for machines list
+    const [postProcesses, setPostProcesses] = useState([]); // New state for post processes list
+    const [projectAssemblies, setProjectAssemblies] = useState([]); // New state for project assemblies (for Subteam/Subsystem)
+
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const navigate = useNavigate();
@@ -69,35 +80,130 @@ function CreatePart() {
                         part => part.type === 'assembly' && part.project_id.toString() === projectId
                     );
                     setParts(projectSpecificAssemblies);
+
+                    // Fetch assemblies for Subteam/Subsystem dropdowns
+                    const assembliesResponse = await api.get(`/projects/${projectId}/assemblies`);
+                    setProjectAssemblies(assembliesResponse.data.assemblies || []);
+
                 } catch (err) {
-                    setError('Failed to fetch parts for project.');
+                    setError('Failed to fetch parts or assemblies for project.');
                     console.error(err);
                 }
             } else {
                 setParts([]);
+                setProjectAssemblies([]);
             }
         };
         fetchPartsForProject();
     }, [projectId]);
+
+    // New useEffect to fetch machines
+    useEffect(() => {
+        const fetchMachines = async () => {
+            try {
+                const response = await api.get('/machines');
+                setMachines(response.data.machines || []);
+            } catch (err) {
+                setError('Failed to fetch machines.');
+                console.error(err);
+            }
+        };
+        fetchMachines();
+    }, []);
+
+    // New useEffect to fetch post processes
+    useEffect(() => {
+        const fetchPostProcesses = async () => {
+            try {
+                const response = await api.get('/post-processes');
+                setPostProcesses(response.data.post_processes || []);
+            } catch (err) {
+                setError('Failed to fetch post processes.');
+                console.error(err);
+            }
+        };
+        fetchPostProcesses();
+    }, []);
+
+    // useEffect to fetch derived hierarchy info when parentPartId changes
+    useEffect(() => {
+        const fetchDerivedHierarchy = async () => {
+            if (parentPartId && projectId) { // Ensure projectId is also available
+                try {
+                    const response = await api.get(`/parts/derived-hierarchy-info?parent_assembly_id=${parentPartId}`);
+                    const { derived_subteam_id, derived_subsystem_id } = response.data;
+                    if (derived_subteam_id) {
+                        setSubteamId(derived_subteam_id.toString());
+                    } else {
+                        setSubteamId(''); // Clear if not derived
+                    }
+                    if (derived_subsystem_id) {
+                        setSubsystemId(derived_subsystem_id.toString());
+                    } else {
+                        setSubsystemId(''); // Clear if not derived
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch derived hierarchy info:", err);
+                    // Optionally set an error message for the user
+                    // setError(\'Could not auto-derive Subteam/Subsystem.\');
+                    // Clear them if fetching fails to avoid stale data
+                    setSubteamId('');
+                    setSubsystemId('');
+                }
+            } else {
+                // Clear subteam and subsystem if no parent is selected
+                setSubteamId('');
+                setSubsystemId('');
+            }
+        };
+
+        fetchDerivedHierarchy();
+    }, [parentPartId, projectId]); // Add projectId as a dependency
+
+    const handlePostProcessChange = (e) => {
+        const { options } = e.target;
+        const selectedIds = [];
+        for (let i = 0, l = options.length; i < l; i += 1) {
+            if (options[i].selected) {
+                selectedIds.push(options[i].value);
+            }
+        }
+        setPostProcessIds(selectedIds);
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setIsLoading(true);
         setError('');
 
-        if (!name || !projectId) {
-            setError('Part name and project are required.');
+        if (!name || !projectId || (partType === 'part' && (!quantity || !machineId || !rawMaterial))) {
+            setError('Part name, project, quantity, machine, and raw material are required for parts.');
             setIsLoading(false);
             return;
         }
+        if (partType === 'assembly' && !name || !projectId) {
+             setError('Assembly name and project are required.');
+            setIsLoading(false);
+            return;
+        }
+
 
         const partData = {
             name,
             description,
             project_id: parseInt(projectId),
             parent_id: parentPartId ? parseInt(parentPartId) : null,
-            type: partType, // Added type to partData
+            type: partType,
         };
+
+        if (partType === 'part') {
+            partData.quantity = parseInt(quantity);
+            partData.machine_id = machineId ? parseInt(machineId) : null;
+            partData.raw_material = rawMaterial;
+            partData.post_process_ids = postProcessIds.map(id => parseInt(id));
+            if (subteamId) partData.subteam_id = parseInt(subteamId);
+            if (subsystemId) partData.subsystem_id = parseInt(subsystemId);
+        }
 
         try {
             await api.post('/parts', partData);
@@ -120,11 +226,11 @@ function CreatePart() {
 
     return (
         <div className="container mt-4">
-            <h2>Create New {partType === 'assembly' ? 'Assembly' : 'Part'}</h2> {/* Dynamically set title */}
+            <h2>Create New {partType === 'assembly' ? 'Assembly' : 'Part'}</h2>
             {error && <div className="alert alert-danger">{error}</div>}
             <form onSubmit={handleSubmit}>
                 <div className="mb-3">
-                    <label htmlFor="partName" className="form-label">Part Name</label>
+                    <label htmlFor="partName" className="form-label">Name</label>
                     <input
                         type="text"
                         className="form-control"
@@ -135,7 +241,7 @@ function CreatePart() {
                     />
                 </div>
                 <div className="mb-3">
-                    <label htmlFor="partDescription" className="form-label">Description</label>
+                    <label htmlFor="partDescription" className="form-label">Description (Notes for Airtable)</label>
                     <textarea
                         className="form-control"
                         id="partDescription"
@@ -153,11 +259,11 @@ function CreatePart() {
                         onChange={(e) => setPartType(e.target.value)}
                         required
                     >
-                        <option value="part">Part</option> {/* Capitalized */}
-                        <option value="assembly">Assembly</option> {/* Capitalized */}
+                        <option value="part">Part</option>
+                        <option value="assembly">Assembly</option>
                     </select>
                 </div>
-                <div className="mb-3">
+                 <div className="mb-3">
                     <label htmlFor="projectSelect" className="form-label">Project</label>
                     <select
                         className="form-select"
@@ -180,21 +286,133 @@ function CreatePart() {
                         className="form-select"
                         id="parentPartSelect"
                         value={parentPartId}
-                        onChange={(e) => setParentPartId(e.target.value)}
+                        onChange={(e) => {
+                            setParentPartId(e.target.value);
+                            // Clearing subteam/subsystem here is one approach, 
+                            // but the useEffect above will handle it based on new parentPartId
+                        }}
                         disabled={!projectId || parts.length === 0}
                     >
                         <option value="">None</option>
-                        {parts.map(part => ( // Now 'parts' only contains assemblies
+                        {parts.map(part => (
                             <option key={part.id} value={part.id}>
                                 {part.name} (Part Number: {part.part_number})
                             </option>
                         ))}
                     </select>
-                    {!projectId && <small className="form-text text-muted">Select a project to see available parent parts.</small>}
+                    {!projectId && <small className="form-text text-muted">Select a project to see available parent assemblies.</small>}
                     {projectId && parts.length === 0 && <small className="form-text text-muted">No assemblies available in the selected project to be a parent.</small>}
                 </div>
+
+                {/* New fields only for type 'part' */}
+                {partType === 'part' && (
+                    <>
+                        <div className="mb-3">
+                            <label htmlFor="quantity" className="form-label">Quantity</label>
+                            <input
+                                type="number"
+                                className="form-control"
+                                id="quantity"
+                                value={quantity}
+                                onChange={(e) => setQuantity(e.target.value)}
+                                required
+                                min="1"
+                            />
+                        </div>
+
+                        <div className="mb-3">
+                            <label htmlFor="machineSelect" className="form-label">Machine</label>
+                            <select
+                                className="form-select"
+                                id="machineSelect"
+                                value={machineId}
+                                onChange={(e) => setMachineId(e.target.value)}
+                                required
+                            >
+                                <option value="">Select a Machine</option>
+                                {machines.map(machine => (
+                                    <option key={machine.id} value={machine.id}>
+                                        {machine.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="mb-3">
+                            <label htmlFor="rawMaterial" className="form-label">Raw Material</label>
+                            <input
+                                type="text"
+                                className="form-control"
+                                id="rawMaterial"
+                                value={rawMaterial}
+                                onChange={(e) => setRawMaterial(e.target.value)}
+                                required
+                            />
+                        </div>
+
+                        <div className="mb-3">
+                            <label htmlFor="postProcessSelect" className="form-label">Post Processes (Ctrl/Cmd + Click to select multiple)</label>
+                            <select
+                                multiple
+                                className="form-select"
+                                id="postProcessSelect"
+                                value={postProcessIds}
+                                onChange={handlePostProcessChange}
+                                size="5" // Show a few items
+                            >
+                                {postProcesses.map(pp => (
+                                    <option key={pp.id} value={pp.id}>
+                                        {pp.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        
+                        <div className="mb-3">
+                            <label htmlFor="subteamSelect" className="form-label">Subteam (Optional - will be auto-derived if not selected)</label>
+                            <select
+                                className="form-select"
+                                id="subteamSelect"
+                                value={subteamId}
+                                onChange={(e) => setSubteamId(e.target.value)}
+                                disabled={!projectId || projectAssemblies.length === 0}
+                            >
+                                <option value="">Select Subteam (Optional)</option>
+                                {projectAssemblies.map(assembly => (
+                                    <option key={assembly.id} value={assembly.id}>
+                                        {assembly.name}
+                                    </option>
+                                ))}
+                            </select>
+                             {!projectId && <small className="form-text text-muted">Select a project to see available assemblies for Subteam.</small>}
+                             {projectId && projectAssemblies.length === 0 && <small className="form-text text-muted">No assemblies available in the selected project for Subteam.</small>}
+                        </div>
+
+                        <div className="mb-3">
+                            <label htmlFor="subsystemSelect" className="form-label">Subsystem (Optional - will be auto-derived if not selected)</label>
+                            <select
+                                className="form-select"
+                                id="subsystemSelect"
+                                value={subsystemId}
+                                onChange={(e) => setSubsystemId(e.target.value)}
+                                disabled={!projectId || projectAssemblies.length === 0}
+                            >
+                                <option value="">Select Subsystem (Optional)</option>
+                                {projectAssemblies.map(assembly => (
+                                    <option key={assembly.id} value={assembly.id}>
+                                        {assembly.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {!projectId && <small className="form-text text-muted">Select a project to see available assemblies for Subsystem.</small>}
+                            {projectId && projectAssemblies.length === 0 && <small className="form-text text-muted">No assemblies available in the selected project for Subsystem.</small>}
+                        </div>
+                    </>
+                )}
+                {/* ... end of new fields ... */}
+
                 <button type="submit" className="btn btn-primary" disabled={isLoading}>
-                    {isLoading ? 'Creating...' : `Create ${partType === 'assembly' ? 'Assembly' : 'Part'}`}{/* Dynamically set button text */}
+                    {isLoading ? 'Creating...' : `Create ${partType === 'assembly' ? 'Assembly' : 'Part'}`}
                 </button>
             </form>
         </div>

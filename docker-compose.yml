@@ -35,6 +35,9 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your_strong_jwt_secret_here} # CHANGE THIS!
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080} # Adjust if your frontend runs on a different port locally or for prod domain
       # Add any other backend-specific environment variables here
+      AIRTABLE_API_KEY: ${AIRTABLE_API_KEY}
+      AIRTABLE_BASE_ID: ${AIRTABLE_BASE_ID}
+      AIRTABLE_TABLE_ID: ${AIRTABLE_TABLE_ID}
     ports:
       - "8000:8000" # Expose backend port for direct access if needed, or rely on frontend proxy
     depends_on:

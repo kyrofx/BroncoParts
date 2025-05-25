@@ -13,17 +13,34 @@ def create_app():
     app = Flask(__name__)
 
     # Configuration settings
+    # FLASK_ENV (and thus app.env) is set by the environment variable.
+    # If you need to explicitly put it in app.config, do it after app creation:
+    app.config['ENV'] = os.environ.get('FLASK_ENV', 'production') # Ensure it matches FLASK_ENV
+
     # Read from environment variables, with fallbacks for local development if appropriate
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
         'DATABASE_URL', 
-        'mysql+pymysql://root:bronco_racing@127.0.0.1/bronco_parts'
+        'mysql+pymysql://bp_prod_user:your_very_strong_db_password_here@127.0.0.1/broncoparts_production'
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     jwt_secret_key = os.environ.get('JWT_SECRET_KEY')
-    if not jwt_secret_key and app.config['ENV'] == 'production':
+    # Check environment for production
+    flask_env = os.environ.get('FLASK_ENV', 'production')
+    if not jwt_secret_key and flask_env == 'production':
         raise ValueError("No JWT_SECRET_KEY set for Flask application in production environment.")
     app.config['JWT_SECRET_KEY'] = jwt_secret_key or 'super-secret-dev-key' # Fallback for dev only
+
+    # Airtable Configuration
+    app.config['AIRTABLE_API_KEY'] = os.environ.get('AIRTABLE_API_KEY') # Removed default
+    app.config['AIRTABLE_BASE_ID'] = os.environ.get('AIRTABLE_BASE_ID') # Removed default
+    app.config['AIRTABLE_TABLE_ID'] = os.environ.get('AIRTABLE_TABLE_ID') # Removed default
+    
+    # Ensure API key is set in production
+    if not app.config['AIRTABLE_API_KEY'] and flask_env == 'production':
+        raise ValueError("Airtable API Key not set for production environment.")
+    elif not app.config['AIRTABLE_API_KEY'] and flask_env != 'production':
+        app.logger.warning("Airtable API Key is not set. Airtable integration will not work.")
 
     # Initialize extensions with the app
     db.init_app(app)
