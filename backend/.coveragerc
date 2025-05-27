@@ -1,0 +1,32 @@
+# Test coverage configuration for the Bronco Parts backend
+[run]
+source = app
+omit = 
+    */venv/*
+    */env/*
+    */__pycache__/*
+    */migrations/*
+    */tests/*
+    app/config.py
+    app/__init__.py
+    run.py
+    wsgi.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if self.debug:
+    if settings.DEBUG
+    raise AssertionError
+    raise NotImplementedError
+    if 0:
+    if __name__ == .__main__.:
+    class .*\bProtocol\):
+    @(abc\.)?abstractmethod
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml

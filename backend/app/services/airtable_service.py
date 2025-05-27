@@ -1,7 +1,9 @@
 from pyairtable import Table
+from pyairtable.exceptions import PyAirtableError
 from flask import current_app
 from ..models import Part # Corrected import
 import requests # Import requests for more specific error handling
+import json
 
 # Airtable Column Name Constants (as per feature_part_creation_enhancements.md)
 AIRTABLE_NAME = "Name"
@@ -155,22 +157,151 @@ def add_option_to_airtable_subsystem_field(new_option_name: str) -> bool:
     Returns:
         bool: True if successful, False if failed (but this doesn't prevent part creation)
     """
+    # First try the proven typecast approach
+    current_app.logger.info(f"Attempting to add option '{new_option_name}' to Airtable Subsystem field using typecast method")
+    result = add_option_via_typecast(new_option_name, AIRTABLE_SUBSYSTEM)
+    
+    if result:
+        current_app.logger.info(f"Successfully added option '{new_option_name}' using typecast method")
+        return True
+    
+    # Fallback to the metadata API approach if typecast fails
+    current_app.logger.warning(f"Typecast method failed for '{new_option_name}', trying metadata API approach")
+    
     table = get_airtable_table()
     if not table:
         current_app.logger.error("Airtable table not initialized. Cannot add subsystem option.")
+        log_manual_airtable_instructions(new_option_name, AIRTABLE_SUBSYSTEM)
         return False
     
     try:
         # AIRTABLE_SUBSYSTEM is "Subsystem"
         result = _update_airtable_field_choices(table, AIRTABLE_SUBSYSTEM, new_option_name)
         if not result:
-            current_app.logger.warning(f"Could not automatically add '{new_option_name}' to Airtable Subsystem field.")
+            current_app.logger.warning(f"Could not automatically add '{new_option_name}' to Airtable Subsystem field using either method.")
             log_manual_airtable_instructions(new_option_name, AIRTABLE_SUBSYSTEM)
         return result
     except Exception as e:
         current_app.logger.error(f"Exception when trying to add '{new_option_name}' to Airtable Subsystem field: {e}", exc_info=True)
         log_manual_airtable_instructions(new_option_name, AIRTABLE_SUBSYSTEM)
         return False
+
+
+def add_option_via_typecast(option_value: str, field_name: str, primary_field_value: str = None) -> bool:
+    """
+    Adds a new option to an Airtable select field using the proven approach from airtable_new_option.py.
+    This uses the direct Airtable API with typecast=True to create a temporary record, 
+    then immediately deletes it.
+    
+    This is the approach that actually works based on the test script.
+    
+    Args:
+        option_value (str): The new option value to add
+        field_name (str): The Airtable field name (e.g., "Subsystem")
+        primary_field_value (str): Optional value for the primary field; if None, a default is generated
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    api_key = current_app.config.get('AIRTABLE_API_KEY')
+    base_id = current_app.config.get('AIRTABLE_BASE_ID')
+    table_id = current_app.config.get('AIRTABLE_TABLE_ID')
+
+    if not all([api_key, base_id, table_id]):
+        current_app.logger.error("Airtable configuration missing for option addition")
+        return False
+        
+    if api_key == 'YOUR_AIRTABLE_API_KEY':
+        current_app.logger.error("Airtable API Key is a placeholder")
+        return False
+
+    if not option_value or not option_value.strip():
+        current_app.logger.warning(f"Empty option value provided for field '{field_name}'")
+        return False
+
+    cleaned_option_value = option_value.strip()
+    if primary_field_value is None:
+        primary_field_value = f"Temporary record to add option '{cleaned_option_value[:30]}'"
+
+    # Direct API approach based on airtable_new_option.py
+    url = f"https://api.airtable.com/v0/{base_id}/{table_id}"
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    # Create the record with typecast=True
+    data_fields = {
+        AIRTABLE_NAME: primary_field_value,
+        field_name: cleaned_option_value
+    }
+
+    payload = {
+        "records": [
+            {
+                "fields": data_fields
+            }
+        ],
+        "typecast": True  # This is crucial for adding new options
+    }
+
+    created_record_id = None
+    
+    try:
+        current_app.logger.info(f"Creating temporary record to add option '{cleaned_option_value}' to field '{field_name}'")
+        
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        response.raise_for_status()
+        
+        response_data = response.json()
+        if 'records' in response_data and len(response_data['records']) > 0:
+            created_record_id = response_data['records'][0]['id']
+            current_app.logger.info(f"Successfully created temporary record {created_record_id}")
+        else:
+            current_app.logger.error(f"Unexpected response structure: {response_data}")
+            return False
+            
+    except requests.exceptions.HTTPError as e:
+        current_app.logger.error(f"HTTP Error creating record: {e}")
+        if e.response:
+            current_app.logger.error(f"Response content: {e.response.content.decode()}")
+        return False
+    except Exception as e:
+        current_app.logger.error(f"Error creating temporary record: {e}", exc_info=True)
+        return False
+
+    # Now delete the temporary record
+    if created_record_id:
+        try:
+            delete_url = f"{url}/{created_record_id}"
+            current_app.logger.info(f"Deleting temporary record {created_record_id}")
+            
+            delete_response = requests.delete(delete_url, headers=headers)
+            delete_response.raise_for_status()
+            
+            current_app.logger.info(f"Successfully deleted temporary record {created_record_id}")
+            current_app.logger.info(f"Option '{cleaned_option_value}' should now be available in field '{field_name}'")
+            return True
+            
+        except requests.exceptions.HTTPError as e:
+            current_app.logger.error(f"HTTP Error deleting record {created_record_id}: {e}")
+            current_app.logger.warning(f"Temporary record {created_record_id} may need manual deletion")
+            return True  # Option was still added, just cleanup failed
+        except Exception as e:
+            current_app.logger.error(f"Error deleting temporary record {created_record_id}: {e}", exc_info=True)
+            current_app.logger.warning(f"Temporary record {created_record_id} may need manual deletion")
+            return True  # Option was still added, just cleanup failed
+    
+    return False
+
+
+def add_option_to_subsystem_field_improved(new_option_name: str) -> bool:
+    """
+    Improved version of add_option_to_airtable_subsystem_field that uses the proven approach.
+    This should be used instead of the original function.
+    """
+    return add_option_via_typecast(new_option_name, AIRTABLE_SUBSYSTEM)
 
 
 def get_airtable_select_options(table: Table, field_name: str) -> list[str]:

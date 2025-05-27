@@ -1782,8 +1782,8 @@ def register_user_via_link(link_identifier):
 
     # Register the user with the details from the link
     new_user = User(
-        username=fixed_username or f"user_{uuid.uuid4().hex[:8]}", # Generate a random username if not fixed
-        email=fixed_email or f"email_{uuid.uuid4().hex[:8]}@example.com", # Generate a random email if not fixed
+        username=fixed_username or data.get('username', ''),
+        email=fixed_email or data.get('email', ''), 
         first_name=data.get('first_name', ''),
         last_name=data.get('last_name', ''),
         permission=link.default_permission,

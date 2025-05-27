@@ -40,9 +40,17 @@ def get_engine_url():
 # Import models explicitly for Alembic autogenerate
 # from app.models import User, Order, OrderItem, Part, RegistrationLink # Add other models if they exist
 # Ensure all models are imported before target_metadata is accessed.
-from app.models import db # Import db instance from app.models
-
-config.set_main_option('sqlalchemy.url', get_engine_url())
+# Try to import db and set sqlalchemy.url only if running in app context
+try:
+    from app.models import db  # Import db instance from app.models
+    # Only set sqlalchemy.url if running inside Flask app context
+    from flask import has_app_context
+    if has_app_context() and current_app:
+        config.set_main_option('sqlalchemy.url', get_engine_url())
+except Exception as e:
+    # Not running in Flask app context; skip setting sqlalchemy.url
+    import sys
+    print(f"[alembic/env.py] Skipping Flask app context DB URL override: {e}", file=sys.stderr)
 # target_db = current_app.extensions['migrate'].db # Not needed if using db.metadata directly
 
 # other values from the config, defined by the needs of env.py,
@@ -97,21 +105,36 @@ def run_migrations_online():
                 directives[:] = []
                 logger.info('No changes in schema detected.')
 
-    conf_args = current_app.extensions['migrate'].configure_args
-    if conf_args.get("process_revision_directives") is None:
-        conf_args["process_revision_directives"] = process_revision_directives
-
-    connectable = get_engine()
-
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=get_metadata(),
-            **conf_args
+    try:
+        # Try to use Flask app context if available
+        conf_args = current_app.extensions['migrate'].configure_args
+        if conf_args.get("process_revision_directives") is None:
+            conf_args["process_revision_directives"] = process_revision_directives
+        connectable = get_engine()
+        with connectable.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=get_metadata(),
+                **conf_args
+            )
+            with context.begin_transaction():
+                context.run_migrations()
+    except RuntimeError:
+        # Not in Flask app context: use config DB URL and SQLAlchemy engine
+        from sqlalchemy import engine_from_config, pool
+        connectable = engine_from_config(
+            config.get_section(config.config_ini_section),
+            prefix='sqlalchemy.',
+            poolclass=pool.NullPool,
         )
-
-        with context.begin_transaction():
-            context.run_migrations()
+        with connectable.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=get_metadata(),
+                process_revision_directives=process_revision_directives
+            )
+            with context.begin_transaction():
+                context.run_migrations()
 
 
 if context.is_offline_mode():

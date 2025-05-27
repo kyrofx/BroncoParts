@@ -26,12 +26,32 @@ class User(db.Model):
     requested_at = db.Column(db.DateTime, default=datetime.datetime.utcnow) # For tracking approval request time
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    registered_via_link_id = db.Column(db.Integer, db.ForeignKey('registration_links.id'), nullable=True)  # Link used for registration
+
+    # Relationships
+    registration_link = db.relationship('RegistrationLink', foreign_keys=[registered_via_link_id], backref=db.backref('registered_users', lazy='dynamic'))
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'email': self.email,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'permission': self.permission,
+            'enabled': self.enabled,
+            'is_approved': self.is_approved,
+            'requested_at': self.requested_at.isoformat() if self.requested_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'registered_via_link_id': self.registered_via_link_id
+        }
 
     def __repr__(self):
         return f'<User {self.username} ({self.permission}){" Enabled" if self.enabled else " Disabled"}{" Approved" if self.is_approved else " Pending Approval"}>'
@@ -60,7 +80,7 @@ class RegistrationLink(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     is_active = db.Column(db.Boolean, default=True) # To manually disable/enable a link
 
-    creator = db.relationship('User', backref=db.backref('created_registration_links', lazy='dynamic'))
+    creator = db.relationship('User', foreign_keys=[created_by_user_id], backref=db.backref('created_registration_links', lazy='dynamic'))
 
     @validates('custom_path')
     def validate_custom_path(self, key, custom_path):

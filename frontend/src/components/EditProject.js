@@ -122,7 +122,7 @@ function EditProject() {
                         required 
                         maxLength="10" // Assuming a reasonable max length for prefix
                     />
-                     <small className="form-text text-muted">A short prefix for part numbers (e.g., BP, CHS). Max 10 characters.</small>
+                     <small className="form-text text-muted">Short prefix for part numbers. Max 10 characters.</small>
                 </div>
                 
                 <button type="submit" className="btn btn-primary" disabled={isLoading || !canEditProject}>
