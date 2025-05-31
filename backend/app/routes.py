@@ -5,7 +5,7 @@ from decimal import Decimal
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt # Import JWT functions
 from .decorators import admin_required, editor_or_admin_required, readonly_or_higher_required
 from datetime import datetime
-from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field # Import the Airtable service and new function
+from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field, get_airtable_table, get_airtable_select_options, add_option_via_typecast, AIRTABLE_MACHINE, AIRTABLE_POST_PROCESS # Import the Airtable service and functions
 import uuid # Ensure uuid is imported at the top if not already fully present
 
 @app.route('/api/hello')
@@ -21,7 +21,7 @@ def create_project():
     data = request.json
     if not data or not data.get('name') or not data.get('prefix'):
         return jsonify(message="Error: Missing name or prefix"), 400
-    
+
     new_project = Project(
         name=data['name'],
         prefix=data['prefix'],
@@ -84,7 +84,7 @@ def update_project(project_id):
     project.prefix = data.get('prefix', project.prefix)
     project.description = data.get('description', project.description)
     project.hide_dashboards = data.get('hide_dashboards', project.hide_dashboards)
-    
+
     db.session.commit()
     return jsonify(message="Project updated successfully", project={
         'id': project.id,
@@ -141,7 +141,7 @@ def get_project_tree(project_id):
                          children_nodes.append(format_part_node(child_part))
                 if children_nodes: # Only add children key if there are processed children
                     node["children"] = children_nodes
-        
+
         memo[part.id] = node
         return node
 
@@ -175,7 +175,7 @@ def create_part():
     base_required_fields = ['name', 'project_id', 'type']
     # Fields specific to 'part' type, not required for 'assembly'
     part_specific_fields = ['quantity', 'machine_id', 'raw_material', 'post_process_ids'] 
-    
+
     part_type = data.get('type', '').lower()
 
     if not data:
@@ -191,7 +191,7 @@ def create_part():
         pass # No additional fields are strictly required for assemblies beyond base_required_fields
     else: # Invalid part type
         return jsonify(message="Error: Invalid part type. Must be 'assembly' or 'part'."), 400
-        
+
     missing_fields = []
     for field in required_fields:
         if field not in data:
@@ -202,10 +202,10 @@ def create_part():
             if part_type == 'part' and field in ['machine_id', 'raw_material']: # These cannot be None for a 'part'
                 missing_fields.append(field)
             # 'quantity' can be 0. 'post_process_ids' handled below.
-    
+
     if part_type == 'part' and 'post_process_ids' not in data: # Key itself must be present for 'part'
         missing_fields.append('post_process_ids')
-    
+
     if missing_fields:
         return jsonify(message=f"Error: Missing one or more required fields for type '{part_type}': {missing_fields}"), 400
 
@@ -366,7 +366,7 @@ def create_part():
                 current_ancestor = Part.query.get(current_ancestor.parent_id)
             else:
                 current_ancestor = None
-        
+
         # ancestors list is [GrandestParent, ..., GrandParent, ParentOfParentAssembly]
         # The full breadcrumb for the new part would be ancestors + [parent_assembly]
         full_breadcrumb_parts = ancestors + ([parent_assembly] if parent_assembly else [])
@@ -474,7 +474,7 @@ def create_part():
             app.logger.info(f"Skipping Airtable sync for part {new_part.part_number} ({new_part.name}) - not from the first project created.")
     elif new_part.type.lower() == 'assembly':
         app.logger.info(f"Skipping Airtable data sync for assembly: {new_part.part_number} ({new_part.name}). Subsystem option update (if applicable) was handled separately.")
-    
+
     # Prepare response, including new fields
     part_data_response = {
         'id': new_part.id,
@@ -523,12 +523,224 @@ def get_machines():
     machines = Machine.query.all()
     return jsonify(machines=[{'id': m.id, 'name': m.name} for m in machines])
 
+@app.route('/api/machines/airtable-options', methods=['GET'])
+@readonly_or_higher_required
+def get_machine_airtable_options():
+    """Get machine options from Airtable"""
+    try:
+        table = get_airtable_table()
+        if not table:
+            return jsonify(message="Error: Could not connect to Airtable", options=[]), 500
+
+        options = get_airtable_select_options(table, AIRTABLE_MACHINE)
+        return jsonify(options=options)
+    except Exception as e:
+        current_app.logger.error(f"Error fetching machine options from Airtable: {e}")
+        return jsonify(message=f"Error: {str(e)}", options=[]), 500
+
+@app.route('/api/machines', methods=['POST'])
+@editor_or_admin_required
+def create_machine():
+    data = request.get_json()
+    if not data or 'name' not in data:
+        return jsonify(message="Error: Name is required"), 400
+
+    name = data['name']
+    if not name:
+        return jsonify(message="Error: Name cannot be empty"), 400
+
+    # Check if machine with this name already exists
+    existing_machine = Machine.query.filter_by(name=name).first()
+    if existing_machine:
+        return jsonify(message=f"Error: Machine with name '{name}' already exists"), 400
+
+    # Create new machine
+    new_machine = Machine(name=name)
+    db.session.add(new_machine)
+
+    try:
+        db.session.commit()
+        return jsonify(message="Machine created successfully", machine={'id': new_machine.id, 'name': new_machine.name}), 201
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error creating machine: {str(e)}")
+        return jsonify(message=f"Error creating machine: {str(e)}"), 500
+
+@app.route('/api/machines/<int:machine_id>', methods=['DELETE'])
+@editor_or_admin_required
+def delete_machine(machine_id):
+    machine = Machine.query.get_or_404(machine_id)
+
+    # Check if machine is used by any parts
+    if machine.parts.count() > 0:
+        return jsonify(message=f"Error: Cannot delete machine '{machine.name}' because it is used by {machine.parts.count()} parts"), 400
+
+    try:
+        db.session.delete(machine)
+        db.session.commit()
+        return jsonify(message=f"Machine '{machine.name}' deleted successfully"), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting machine: {str(e)}")
+        return jsonify(message=f"Error deleting machine: {str(e)}"), 500
+
+@app.route('/api/machines/sync-with-airtable', methods=['POST'])
+@editor_or_admin_required
+def sync_machines_with_airtable():
+    """Sync machine options between Airtable and the database"""
+    try:
+        # Get machine options from Airtable
+        table = get_airtable_table()
+        if not table:
+            return jsonify(message="Error: Could not connect to Airtable"), 500
+
+        airtable_options = get_airtable_select_options(table, AIRTABLE_MACHINE)
+
+        # Get existing machines from database
+        db_machines = Machine.query.all()
+        db_machine_names = [m.name for m in db_machines]
+
+        # Add machines from Airtable that don't exist in the database
+        new_machines = []
+        for option in airtable_options:
+            if option not in db_machine_names:
+                new_machine = Machine(name=option)
+                db.session.add(new_machine)
+                new_machines.append(option)
+
+        # Add machines from database that don't exist in Airtable
+        new_airtable_options = []
+        for machine in db_machines:
+            if machine.name not in airtable_options:
+                # Add option to Airtable
+                result = add_option_via_typecast(machine.name, AIRTABLE_MACHINE)
+                if result:
+                    new_airtable_options.append(machine.name)
+
+        db.session.commit()
+
+        return jsonify(
+            message="Machines synced successfully with Airtable",
+            added_to_db=new_machines,
+            added_to_airtable=new_airtable_options
+        ), 200
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error syncing machines with Airtable: {e}")
+        return jsonify(message=f"Error: {str(e)}"), 500
+
 # --- PostProcess Routes ---
 @app.route('/api/post-processes', methods=['GET'])
 @readonly_or_higher_required
 def get_post_processes():
     post_processes = PostProcess.query.all()
     return jsonify(post_processes=[{'id': p.id, 'name': p.name} for p in post_processes])
+
+@app.route('/api/post-processes/airtable-options', methods=['GET'])
+@readonly_or_higher_required
+def get_post_process_airtable_options():
+    """Get post process options from Airtable"""
+    try:
+        table = get_airtable_table()
+        if not table:
+            return jsonify(message="Error: Could not connect to Airtable", options=[]), 500
+
+        options = get_airtable_select_options(table, AIRTABLE_POST_PROCESS)
+        return jsonify(options=options)
+    except Exception as e:
+        current_app.logger.error(f"Error fetching post process options from Airtable: {e}")
+        return jsonify(message=f"Error: {str(e)}", options=[]), 500
+
+@app.route('/api/post-processes', methods=['POST'])
+@editor_or_admin_required
+def create_post_process():
+    data = request.get_json()
+    if not data or 'name' not in data:
+        return jsonify(message="Error: Name is required"), 400
+
+    name = data['name']
+    if not name:
+        return jsonify(message="Error: Name cannot be empty"), 400
+
+    # Check if post process with this name already exists
+    existing_post_process = PostProcess.query.filter_by(name=name).first()
+    if existing_post_process:
+        return jsonify(message=f"Error: Post process with name '{name}' already exists"), 400
+
+    # Create new post process
+    new_post_process = PostProcess(name=name)
+    db.session.add(new_post_process)
+
+    try:
+        db.session.commit()
+        return jsonify(message="Post process created successfully", post_process={'id': new_post_process.id, 'name': new_post_process.name}), 201
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error creating post process: {str(e)}")
+        return jsonify(message=f"Error creating post process: {str(e)}"), 500
+
+@app.route('/api/post-processes/<int:post_process_id>', methods=['DELETE'])
+@editor_or_admin_required
+def delete_post_process(post_process_id):
+    post_process = PostProcess.query.get_or_404(post_process_id)
+
+    # Check if post process is used by any parts
+    if post_process.parts.count() > 0:
+        return jsonify(message=f"Error: Cannot delete post process '{post_process.name}' because it is used by {post_process.parts.count()} parts"), 400
+
+    try:
+        db.session.delete(post_process)
+        db.session.commit()
+        return jsonify(message=f"Post process '{post_process.name}' deleted successfully"), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting post process: {str(e)}")
+        return jsonify(message=f"Error deleting post process: {str(e)}"), 500
+
+@app.route('/api/post-processes/sync-with-airtable', methods=['POST'])
+@editor_or_admin_required
+def sync_post_processes_with_airtable():
+    """Sync post process options between Airtable and the database"""
+    try:
+        # Get post process options from Airtable
+        table = get_airtable_table()
+        if not table:
+            return jsonify(message="Error: Could not connect to Airtable"), 500
+
+        airtable_options = get_airtable_select_options(table, AIRTABLE_POST_PROCESS)
+
+        # Get existing post processes from database
+        db_post_processes = PostProcess.query.all()
+        db_post_process_names = [p.name for p in db_post_processes]
+
+        # Add post processes from Airtable that don't exist in the database
+        new_post_processes = []
+        for option in airtable_options:
+            if option not in db_post_process_names:
+                new_post_process = PostProcess(name=option)
+                db.session.add(new_post_process)
+                new_post_processes.append(option)
+
+        # Add post processes from database that don't exist in Airtable
+        new_airtable_options = []
+        for post_process in db_post_processes:
+            if post_process.name not in airtable_options:
+                # Add option to Airtable
+                result = add_option_via_typecast(post_process.name, AIRTABLE_POST_PROCESS)
+                if result:
+                    new_airtable_options.append(post_process.name)
+
+        db.session.commit()
+
+        return jsonify(
+            message="Post processes synced successfully with Airtable",
+            added_to_db=new_post_processes,
+            added_to_airtable=new_airtable_options
+        ), 200
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error syncing post processes with Airtable: {e}")
+        return jsonify(message=f"Error: {str(e)}"), 500
 
 # --- Project Specific Assemblies ---
 @app.route('/api/projects/<int:project_id>/assemblies', methods=['GET'])
@@ -553,7 +765,7 @@ def get_derived_hierarchy_info():
     parent_assembly = Part.query.get(parent_assembly_id)
     if not parent_assembly:
         return jsonify(message=f"Error: Parent assembly with id {parent_assembly_id} not found"), 404
-    
+
     if parent_assembly.type.lower() != 'assembly':
         return jsonify(message=f"Error: Part with id {parent_assembly_id} (name: {parent_assembly.name}) is not an assembly type."), 400
 
@@ -564,7 +776,7 @@ def get_derived_hierarchy_info():
 
     ancestors_of_parent_assembly = []
     current_ancestor = parent_assembly
-    
+
     # Build the breadcrumb for parent_assembly: [TLA, ..., Grandparent_of_Parent, Parent_of_Parent, ParentAssemblyItself]
     visited_in_path = set() # For cycle detection in current path
     while current_ancestor:
@@ -572,15 +784,15 @@ def get_derived_hierarchy_info():
             app.logger.error(f"Cycle detected involving part {current_ancestor.id} while building breadcrumb for {parent_assembly.id}")
             # Depending on desired behavior, either return error or break and proceed with partial breadcrumb
             return jsonify(message=f"Error: Cycle detected in hierarchy involving part {current_ancestor.name} ({current_ancestor.id})"), 500
-        
+
         visited_in_path.add(current_ancestor.id)
         ancestors_of_parent_assembly.insert(0, current_ancestor)
-        
+
         if current_ancestor.parent_id:
             if current_ancestor.parent_id == current_ancestor.id: 
                 app.logger.error(f"Cycle detected: Part {current_ancestor.id} is its own parent.")
                 return jsonify(message=f"Error: Part {current_ancestor.name} ({current_ancestor.id}) is its own parent."), 500
-            
+
             parent_of_current = Part.query.get(current_ancestor.parent_id)
             # If parent_of_current is None (broken link) or already processed in this path (cycle), stop.
             if not parent_of_current: # Broken foreign key
@@ -589,7 +801,7 @@ def get_derived_hierarchy_info():
             current_ancestor = parent_of_current
         else:
             current_ancestor = None
-            
+
     # ancestors_of_parent_assembly is the breadcrumb for the selected parent_assembly.
     # For a new part created under parent_assembly, its breadcrumb would be: ancestors_of_parent_assembly + [NewPart]
     # Subteam for NewPart = 2nd item of `[TLA, Chassis, PedalBox]` (i.e., ancestors_of_parent_assembly[1])
@@ -604,7 +816,7 @@ def get_derived_hierarchy_info():
         subsystem_part = ancestors_of_parent_assembly[2] # This is the 3rd item of parent_assembly's breadcrumb
         derived_subsystem_id = subsystem_part.id
         derived_subsystem_name = subsystem_part.name
-    
+
     # If the parent_assembly itself is the subteam (e.g. TLA > parent_assembly (Subteam) > NewPart)
     # then len(ancestors_of_parent_assembly) would be 1 (e.g. [TLA]), and parent_assembly is TLA.
     # The new part's breadcrumb: [TLA, NewPart]. Subteam is TLA. Subsystem is TLA.
@@ -770,7 +982,7 @@ def get_part(part_id):
         parent = Part.query.get(part.parent_id)
         if parent:
             part_data_response['parent_part_number'] = parent.part_number
-    
+
     # Optionally, include children parts
     children_parts = []
     for child in part.children.all(): # Assuming 'children' is the relationship name in Part model
@@ -818,7 +1030,7 @@ def update_part(part_id):
         part.quantity = data['quantity']
     if 'raw_material' in data:
         part.raw_material = data['raw_material']
-    
+
     if 'machine_id' in data:
         machine = Machine.query.get(data['machine_id'])
         if not machine:
@@ -828,7 +1040,7 @@ def update_part(part_id):
     if 'post_process_ids' in data:
         if not isinstance(data['post_process_ids'], list):
             return jsonify(message="Error: post_process_ids must be a list."), 400
-        
+
         new_post_processes = []
         for pp_id in data['post_process_ids']:
             pp = PostProcess.query.get(pp_id)
@@ -860,7 +1072,7 @@ def update_part(part_id):
             if subsystem_part.type != 'assembly': # Assuming subsystems are assemblies
                  return jsonify(message=f"Error: Subsystem part must be an assembly."), 400
             part.subsystem_id = data['subsystem_id']
-            
+
     # Parent ID change logic (existing)
     if 'parent_id' in data:
         new_parent_id = data['parent_id']
@@ -875,9 +1087,9 @@ def update_part(part_id):
             part.parent_id = new_parent_id
         else: 
             part.parent_id = None
-            
+
     db.session.commit()
-    
+
     # Re-fetch machine and post-processes for the response after commit
     final_machine = Machine.query.get(part.machine_id) if part.machine_id else None
     final_post_processes = part.post_processes 
@@ -923,7 +1135,7 @@ def update_part(part_id):
         parent = Part.query.get(part.parent_id)
         if parent:
             part_data_response['parent_part_number'] = parent.part_number
-            
+
     return jsonify(message="Part updated successfully", part=part_data_response)
 
 @app.route('/api/parts/<int:part_id>', methods=['DELETE'])
@@ -964,7 +1176,7 @@ def register_user():
     new_user.set_password(data['password'])
     db.session.add(new_user)
     db.session.commit()
-    
+
     user_data = {
         'id': new_user.id,
         'username': new_user.username,
@@ -1005,7 +1217,7 @@ def admin_create_user():
     new_user.set_password(data['password'])
     db.session.add(new_user)
     db.session.commit()
-    
+
     user_data = {
         'id': new_user.id,
         'username': new_user.username,
@@ -1065,7 +1277,7 @@ def login():
         "is_approved": user.is_approved
     }
     access_token = create_access_token(identity=str(user.id), additional_claims=user_claims)
-    
+
     app.logger.info(f"User with email {data['email']} (username: {user.username}) logged in successfully.") # Enhanced log
     return jsonify(access_token=access_token, user = {
         "id": user.id,
@@ -1107,12 +1319,12 @@ def get_user(user_id):
     # current_user_jwt = get_jwt_identity() # Incorrect: returns only the identity (sub)
     current_jwt_payload = get_jwt() # Correct: returns the full decoded JWT payload
     user_to_get = User.query.get_or_404(user_id)
-    
+
     # Admin can get any user, or user can get their own info if enabled
     # The readonly_or_higher_required decorator already checks for enabled status.
     if not current_jwt_payload.get('enabled'):
         return jsonify(message="Error: Account disabled"), 403
-    
+
     if not user_to_get.is_approved and current_jwt_payload.get('permission') != 'admin': # Non-admins cannot view non-approved users (even themselves if somehow not approved yet)
         return jsonify(message="Error: Account not approved."), 403
 
@@ -1166,10 +1378,10 @@ def update_user(user_id):
         if existing_user:
             return jsonify(message=f"Error: Email {data['email']} is already in use."), 400
         user_to_update.email = data['email']
-    
+
     if 'permission' in data:
         user_to_update.permission = data['permission']
-    
+
     if 'enabled' in data:
         user_to_update.enabled = data['enabled']
 
@@ -1190,15 +1402,15 @@ def update_user(user_id):
 @admin_required
 def approve_user(user_id):
     user_to_approve = User.query.get_or_404(user_id)
-    
+
     if user_to_approve.is_approved:
         return jsonify(message="User is already approved."), 400
-        
+
     user_to_approve.is_approved = True
     user_to_approve.enabled = True # Also enable the user upon approval
     # user_to_approve.requested_at = None # Optionally clear requested_at or leave as is for record
     db.session.commit()
-    
+
     user_data = {
         'id': user_to_approve.id,
         'username': user_to_approve.username,
@@ -1222,7 +1434,7 @@ def change_user_password(user_id):
 
     if not data or not data.get('new_password'):
         return jsonify(message="Error: Missing new_password"), 400
-    
+
     is_admin_acting = current_user_jwt.get('permission') == 'admin'
     is_self_update = current_user_jwt.get('user_id') == user_to_update.id
 
@@ -1315,7 +1527,7 @@ def create_order():
         project = Project.query.get(project_id)
         if not project:
             return jsonify(message=f"Error: Project with id {project_id} not found"), 404
-    
+
     # Calculate total_amount from items
     total_amount = sum(Decimal(str(item['unit_price'])) * item['quantity'] for item in data['items'])
 
@@ -1337,7 +1549,7 @@ def create_order():
         if not part:
             db.session.rollback() # Rollback if any part is not found
             return jsonify(message=f"Error: Part with id {item_data['part_id']} not found"), 404
-        
+
         order_item = OrderItem(
             order_id=new_order.id,
             part_id=item_data['part_id'],
@@ -1453,7 +1665,7 @@ def update_order(order_id):
     # For simplicity, this example will focus on updating the main order fields.
     # A more robust implementation would handle item changes carefully.
     # If 'items' are provided, it could mean replacing them.
-    
+
     # Recalculate total_amount if items are modified or if total_amount is explicitly provided
     # For now, we assume total_amount is managed if items are managed separately or not changed here.
     # If items were being updated, total_amount would need recalculation.
@@ -1462,9 +1674,9 @@ def update_order(order_id):
             order.total_amount = Decimal(str(data['total_amount']))
         except:
             return jsonify(message="Error: Invalid total_amount format"), 400
-            
+
     db.session.commit()
-    
+
     updated_order_data = {
         'id': order.id,
         'order_number': order.order_number,
@@ -1511,7 +1723,7 @@ def add_order_item(order_id):
     part = Part.query.get(data['part_id'])
     if not part:
         return jsonify(message=f"Error: Part with id {data['part_id']} not found"), 404
-    
+
     try:
         quantity = int(data['quantity'])
         unit_price = Decimal(str(data['unit_price']))
@@ -1527,7 +1739,7 @@ def add_order_item(order_id):
         unit_price=unit_price
     )
     db.session.add(new_item)
-    
+
     # Recalculate order total_amount
     order.total_amount = sum(Decimal(str(item.unit_price)) * item.quantity for item in order.items) + (unit_price * quantity)
     db.session.commit()
@@ -1563,17 +1775,17 @@ def update_order_item(order_id, item_id):
                 return jsonify(message="Error: Quantity must be a positive integer"), 400
         except ValueError:
             return jsonify(message="Error: Invalid quantity format"), 400
-            
+
     if 'unit_price' in data:
         try:
             item.unit_price = Decimal(str(data['unit_price']))
         except:
             return jsonify(message="Error: Invalid unit_price format"),  400
-    
+
     # Recalculate order total_amount
     new_item_total = item.unit_price * item.quantity
     order.total_amount = (order.total_amount - original_item_total) + new_item_total
-    
+
     db.session.commit()
     updated_item_data = {
         'id': item.id,
@@ -1593,11 +1805,11 @@ def delete_order_item(order_id, item_id):
         return jsonify(message="Forbidden: Admin access required"), 403
     order = Order.query.get_or_404(order_id)
     item = OrderItem.query.filter_by(id=item_id, order_id=order.id).first_or_404()
-    
+
     item_total_to_remove = item.unit_price * item.quantity
-    
+
     db.session.delete(item)
-    
+
     # Recalculate order total_amount
     order.total_amount -= item_total_to_remove
     if order.total_amount < 0: # Should not happen with positive prices/quantities
@@ -1682,7 +1894,7 @@ def update_registration_link(link_id):
             link.auto_enable_new_users = data['auto_enable_new_users']
         if 'is_active' in data:
             link.is_active = data['is_active']
-        
+
         # Prevent changing fixed_username/email if current_uses > 0 and max_uses == 1? (Consider implications)
 
         db.session.commit()
@@ -1723,7 +1935,7 @@ def get_registration_link_details(link_identifier):
     if not link:
         app.logger.warning(f"PUBLIC_LINK_FETCH: Link not found for identifier: {link_identifier}")
         return jsonify(message="Registration link not found."), 404
-    
+
     app.logger.info(f"PUBLIC_LINK_FETCH: Link found (ID: {link.id}): "
                     f"Active: {link.is_active}, "
                     f"Expires: {link.expires_at}, "
@@ -1766,7 +1978,7 @@ def register_user_via_link(link_identifier):
 
     if not link:
         return jsonify(message="Registration link not found."), 404
-    
+
     # Corrected method call: is_currently_valid_for_registration returns a tuple (bool, str)
     is_valid, message = link.is_currently_valid_for_registration()
     if not is_valid:
@@ -1796,15 +2008,15 @@ def register_user_via_link(link_identifier):
     if 'password' not in data or not data['password']:
         return jsonify(message="Error: Password is required for the new user."), 400
     new_user.set_password(data['password'])
-    
+
     db.session.add(new_user)
     link.current_uses += 1 # Increment current_uses
     # Deactivate link if uses are exhausted or if it's a single-use link that's now used
     if link.current_uses >= link.max_uses:
         link.is_active = False
-    
+
     db.session.commit()
-    
+
     user_data = {
         'id': new_user.id,
         'username': new_user.username,
@@ -1849,7 +2061,7 @@ def admin_create_user_via_link():
     # For this example, let's assume they might be part of the link's purpose or are passed in request
     fixed_username = data.get('username', link.default_username) # Or however these are determined
     fixed_email = data.get('email', link.default_email) # Or however these are determined
-    
+
     # Check for existing user by username or email if they are provided
     if fixed_username and User.query.filter_by(username=fixed_username).first():
         return jsonify(message=f"Error: Username '{fixed_username}' already exists"), 409
@@ -1870,13 +2082,13 @@ def admin_create_user_via_link():
     if 'password' not in data or not data['password']:
         return jsonify(message="Error: Password is required for the new user."), 400
     new_user.set_password(data['password'])
-    
+
     db.session.add(new_user)
     link.current_uses += 1 # Increment current_uses
     if link.current_uses >= link.max_uses: # Check if uses are exhausted
         link.is_active = False # Deactivate link if uses are exhausted
     db.session.commit()
-    
+
     user_data = {
         'id': new_user.id,
         'username': new_user.username,

@@ -28,8 +28,10 @@ const Projects = () => {
   }, []);
 
   const sortedProjects = React.useMemo(() => {
-    let sortableProjects = [...projects];
-    if (sortConfig.key !== null) {
+    // Ensure projects is always an array
+    const safeProjects = Array.isArray(projects) ? projects : [];
+    let sortableProjects = [...safeProjects];
+    if (sortConfig && sortConfig.key !== null) {
       sortableProjects.sort((a, b) => {
         if (a[sortConfig.key] < b[sortConfig.key]) {
           return sortConfig.direction === 'asc' ? -1 : 1;

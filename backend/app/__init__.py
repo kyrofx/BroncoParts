@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
@@ -74,6 +74,22 @@ def create_app():
     
     app.logger.setLevel(logging.INFO) # Ensure logger level is set for app.logger
     app.logger.info('BroncoPartsV2 application starting up')
+
+    # Register error handlers
+    @app.errorhandler(400)
+    def handle_bad_request(e):
+        """Handle bad request errors, including JSON parsing errors."""
+        return jsonify(message="Error: Malformed request"), 400
+    
+    @app.errorhandler(404)
+    def handle_not_found(e):
+        """Handle not found errors with JSON response."""
+        return jsonify(message="Error: Resource not found"), 404
+    
+    @app.errorhandler(405)
+    def handle_method_not_allowed(e):
+        """Handle method not allowed errors with JSON response."""
+        return jsonify(message="Error: Method not allowed"), 405
 
     with app.app_context():
         from . import routes

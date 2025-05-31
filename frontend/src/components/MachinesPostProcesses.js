@@ -3,9 +3,10 @@ import apiClient from '../services/api';
 import { 
   Container, Typography, Box, Grid, Paper, TextField, Button, 
   List, ListItem, ListItemText, ListItemSecondaryAction, IconButton,
-  Divider, Snackbar, Alert
+  Divider, Snackbar, Alert, Chip, CircularProgress
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
+import SyncIcon from '@mui/icons-material/Sync';
 
 const MachinesPostProcesses = () => {
   const [machines, setMachines] = useState([]);
@@ -14,11 +15,51 @@ const MachinesPostProcesses = () => {
   const [newPostProcessName, setNewPostProcessName] = useState('');
   const [alert, setAlert] = useState({ open: false, message: '', severity: 'success' });
 
+  // Airtable options
+  const [machineAirtableOptions, setMachineAirtableOptions] = useState([]);
+  const [postProcessAirtableOptions, setPostProcessAirtableOptions] = useState([]);
+
+  // Loading states
+  const [loadingMachineOptions, setLoadingMachineOptions] = useState(false);
+  const [loadingPostProcessOptions, setLoadingPostProcessOptions] = useState(false);
+  const [syncingMachines, setSyncingMachines] = useState(false);
+  const [syncingPostProcesses, setSyncingPostProcesses] = useState(false);
+
   // Fetch machines and post processes on component mount
   useEffect(() => {
     fetchMachines();
     fetchPostProcesses();
+    fetchMachineAirtableOptions();
+    fetchPostProcessAirtableOptions();
   }, []);
+
+  // Fetch machine options from Airtable
+  const fetchMachineAirtableOptions = async () => {
+    setLoadingMachineOptions(true);
+    try {
+      const response = await apiClient.get('/machines/airtable-options');
+      setMachineAirtableOptions(response.data.options || []);
+    } catch (error) {
+      console.error('Error fetching machine options from Airtable:', error);
+      showAlert('Error fetching machine options from Airtable', 'error');
+    } finally {
+      setLoadingMachineOptions(false);
+    }
+  };
+
+  // Fetch post process options from Airtable
+  const fetchPostProcessAirtableOptions = async () => {
+    setLoadingPostProcessOptions(true);
+    try {
+      const response = await apiClient.get('/post-processes/airtable-options');
+      setPostProcessAirtableOptions(response.data.options || []);
+    } catch (error) {
+      console.error('Error fetching post process options from Airtable:', error);
+      showAlert('Error fetching post process options from Airtable', 'error');
+    } finally {
+      setLoadingPostProcessOptions(false);
+    }
+  };
 
   // Fetch machines from API
   const fetchMachines = async () => {
@@ -115,6 +156,72 @@ const MachinesPostProcesses = () => {
     setAlert({ open: true, message, severity });
   };
 
+  // Sync machines with Airtable
+  const syncMachinesWithAirtable = async () => {
+    setSyncingMachines(true);
+    try {
+      const response = await apiClient.post('/machines/sync-with-airtable');
+      showAlert('Machines synced successfully with Airtable', 'success');
+
+      // Refresh data
+      fetchMachines();
+      fetchMachineAirtableOptions();
+
+      // Show details about what was synced
+      const addedToDb = response.data.added_to_db || [];
+      const addedToAirtable = response.data.added_to_airtable || [];
+
+      if (addedToDb.length > 0 || addedToAirtable.length > 0) {
+        let detailMessage = 'Sync details: ';
+        if (addedToDb.length > 0) {
+          detailMessage += `Added ${addedToDb.length} machine(s) to database. `;
+        }
+        if (addedToAirtable.length > 0) {
+          detailMessage += `Added ${addedToAirtable.length} machine(s) to Airtable.`;
+        }
+        console.log(detailMessage);
+      }
+    } catch (error) {
+      console.error('Error syncing machines with Airtable:', error);
+      showAlert(error.response?.data?.message || 'Error syncing machines with Airtable', 'error');
+    } finally {
+      setSyncingMachines(false);
+    }
+  };
+
+  // Sync post processes with Airtable
+  const syncPostProcessesWithAirtable = async () => {
+    setSyncingPostProcesses(true);
+    try {
+      const response = await apiClient.post('/post-processes/sync-with-airtable');
+      showAlert('Post processes synced successfully with Airtable', 'success');
+
+      // Refresh data
+      fetchPostProcesses();
+      fetchPostProcessAirtableOptions();
+
+      // Show details about what was synced
+      const addedToDb = response.data.added_to_db || [];
+      const addedToAirtable = response.data.added_to_airtable || [];
+
+      if (addedToDb.length > 0 || addedToAirtable.length > 0) {
+        let detailMessage = 'Sync details: ';
+        if (addedToDb.length > 0) {
+          detailMessage += `Added ${addedToDb.length} post process(es) to database. `;
+        }
+        if (addedToAirtable.length > 0) {
+          detailMessage += `Added ${addedToAirtable.length} post process(es) to Airtable.`;
+        }
+        console.log(detailMessage);
+      }
+    } catch (error) {
+      console.error('Error syncing post processes with Airtable:', error);
+      showAlert(error.response?.data?.message || 'Error syncing post processes with Airtable', 'error');
+    } finally {
+      setSyncingPostProcesses(false);
+    }
+  };
+
   // Close alert
   const handleCloseAlert = () => {
     setAlert({ ...alert, open: false });
@@ -125,15 +232,30 @@ const MachinesPostProcesses = () => {
       <Typography variant="h4" component="h1" gutterBottom sx={{ mt: 4 }}>
         Machines & Post Processes Management
       </Typography>
-      
+
+      <Typography variant="subtitle1" color="text.secondary" gutterBottom>
+        This page allows you to manage machines and post processes, and sync them with Airtable.
+      </Typography>
+
       <Grid container spacing={4}>
         {/* Machines Section */}
         <Grid item xs={12} md={6}>
           <Paper elevation={3} sx={{ p: 3 }}>
-            <Typography variant="h5" component="h2" gutterBottom>
-              Machines
-            </Typography>
-            
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h5" component="h2">
+                Machines
+              </Typography>
+              <Button
+                variant="outlined"
+                color="primary"
+                startIcon={syncingMachines ? <CircularProgress size={20} /> : <SyncIcon />}
+                onClick={syncMachinesWithAirtable}
+                disabled={syncingMachines}
+              >
+                Sync with Airtable
+              </Button>
+            </Box>
+
             <Box sx={{ mb: 3, display: 'flex', gap: 1 }}>
               <TextField
                 label="New Machine Name"
@@ -151,9 +273,33 @@ const MachinesPostProcesses = () => {
                 Add
               </Button>
             </Box>
-            
+
+            {/* Airtable Options */}
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
+              Airtable Machine Options:
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+              {loadingMachineOptions ? (
+                <CircularProgress size={24} />
+              ) : machineAirtableOptions.length > 0 ? (
+                machineAirtableOptions.map((option, index) => (
+                  <Chip 
+                    key={index} 
+                    label={option} 
+                    variant="outlined" 
+                    color="primary"
+                    size="small"
+                  />
+                ))
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No options found in Airtable
+                </Typography>
+              )}
+            </Box>
+
             <Divider sx={{ mb: 2 }} />
-            
+
             <List>
               {machines.length > 0 ? (
                 machines.map((machine) => (
@@ -178,14 +324,25 @@ const MachinesPostProcesses = () => {
             </List>
           </Paper>
         </Grid>
-        
+
         {/* Post Processes Section */}
         <Grid item xs={12} md={6}>
           <Paper elevation={3} sx={{ p: 3 }}>
-            <Typography variant="h5" component="h2" gutterBottom>
-              Post Processes
-            </Typography>
-            
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h5" component="h2">
+                Post Processes
+              </Typography>
+              <Button
+                variant="outlined"
+                color="primary"
+                startIcon={syncingPostProcesses ? <CircularProgress size={20} /> : <SyncIcon />}
+                onClick={syncPostProcessesWithAirtable}
+                disabled={syncingPostProcesses}
+              >
+                Sync with Airtable
+              </Button>
+            </Box>
+
             <Box sx={{ mb: 3, display: 'flex', gap: 1 }}>
               <TextField
                 label="New Post Process Name"
@@ -203,9 +360,33 @@ const MachinesPostProcesses = () => {
                 Add
               </Button>
             </Box>
-            
+
+            {/* Airtable Options */}
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
+              Airtable Post Process Options:
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+              {loadingPostProcessOptions ? (
+                <CircularProgress size={24} />
+              ) : postProcessAirtableOptions.length > 0 ? (
+                postProcessAirtableOptions.map((option, index) => (
+                  <Chip 
+                    key={index} 
+                    label={option} 
+                    variant="outlined" 
+                    color="primary"
+                    size="small"
+                  />
+                ))
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No options found in Airtable
+                </Typography>
+              )}
+            </Box>
+
             <Divider sx={{ mb: 2 }} />
-            
+
             <List>
               {postProcesses.length > 0 ? (
                 postProcesses.map((postProcess) => (
@@ -231,7 +412,7 @@ const MachinesPostProcesses = () => {
           </Paper>
         </Grid>
       </Grid>
-      
+
       <Snackbar 
         open={alert.open} 
         autoHideDuration={6000} 

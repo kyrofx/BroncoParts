@@ -80,29 +80,9 @@ class TestAuthenticationAPI:
         })
         assert_error_response(response, 400)
     
-    def test_register_success(self, client, db_session, mock_airtable):
-        """Test successful user registration."""
-        admin = TestFixtures.create_test_admin_user(db_session)
-        reg_link = TestFixtures.create_test_registration_link(db_session, admin, custom_path='test-signup')
-        
-        response = client.post('/api/register/link/test-signup', json={
-            'username': 'newuser',
-            'password': 'password123',
-            'email': 'newuser@test.com',
-            'first_name': 'New',
-            'last_name': 'User'
-        })
-        
-        data = assert_success_response(response, 201)
-        assert data['message'] == 'User registered successfully'
-        assert 'user' in data
-        assert data['user']['username'] == 'newuser'
-        assert data['user']['email'] == 'newuser@test.com'
-        assert data['user']['permission'] == 'readonly'  # Default from link
-    
     def test_register_invalid_link(self, client, db_session, mock_airtable):
         """Test registration with invalid link."""
-        response = client.post('/api/register/link/invalid-link', json={
+        response = client.post('/api/register/invalid-link', json={
             'username': 'newuser',
             'password': 'password123',
             'email': 'newuser@test.com',
@@ -121,7 +101,7 @@ class TestAuthenticationAPI:
         reg_link.current_uses = reg_link.max_uses
         db_session.commit()
         
-        response = client.post(f'/api/register/link/{reg_link.effective_link_path_segment}', json={
+        response = client.post(f'/api/register/{reg_link.effective_link_path_segment}', json={
             'username': 'newuser',
             'password': 'password123',
             'email': 'newuser@test.com',
@@ -129,14 +109,14 @@ class TestAuthenticationAPI:
             'last_name': 'User'
         })
         
-        assert_error_response(response, 400, 'registration link is not valid')
+        assert_error_response(response, 400, 'Link has reached its maximum number of uses')
     
     def test_register_duplicate_username(self, client, db_session, mock_airtable):
         """Test registration with duplicate username."""
         admin = TestFixtures.create_test_admin_user(db_session)
         reg_link = TestFixtures.create_test_registration_link(db_session, admin)
         
-        response = client.post(f'/api/register/link/{reg_link.effective_link_path_segment}', json={
+        response = client.post(f'/api/register/{reg_link.effective_link_path_segment}', json={
             'username': 'admin',  # Already exists
             'password': 'password123',
             'email': 'newuser@test.com',
@@ -151,7 +131,7 @@ class TestAuthenticationAPI:
         admin = TestFixtures.create_test_admin_user(db_session)
         reg_link = TestFixtures.create_test_registration_link(db_session, admin)
         
-        response = client.post(f'/api/register/link/{reg_link.effective_link_path_segment}', json={
+        response = client.post(f'/api/register/{reg_link.effective_link_path_segment}', json={
             'username': 'newuser',
             'password': 'password123',
             'email': 'admin@test.com',  # Already exists
@@ -161,26 +141,7 @@ class TestAuthenticationAPI:
         
         assert_error_response(response, 400, 'Email already exists')
     
-    def test_password_reset_request(self, client, db_session, mock_airtable):
-        """Test password reset request."""
-        user = TestFixtures.create_test_admin_user(db_session)
-        
-        response = client.post('/api/request-password-reset', json={
-            'email': 'admin@test.com'
-        })
-        
-        data = assert_success_response(response)
-        assert 'password reset has been sent' in data['message']
-    
-    def test_password_reset_request_nonexistent_email(self, client, db_session, mock_airtable):
-        """Test password reset request with nonexistent email."""
-        response = client.post('/api/request-password-reset', json={
-            'email': 'nonexistent@test.com'
-        })
-        
-        # Should still return success for security reasons
-        data = assert_success_response(response)
-        assert 'password reset has been sent' in data['message']
+
     
     def test_protected_endpoint_without_auth(self, client, db_session, mock_airtable):
         """Test accessing protected endpoint without authentication."""

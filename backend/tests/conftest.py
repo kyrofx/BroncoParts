@@ -151,8 +151,7 @@ class TestFixtures:
                 name = f"{name}-{random.randint(1000, 9999)}"
 
         machine = Machine(
-            name=name,
-            description=kwargs.get('description', f"A test machine for {name}")
+            name=name
         )
         db_session.add(machine)
         db_session.commit()
@@ -165,8 +164,7 @@ class TestFixtures:
         db_session = db.session
 
         post_process = PostProcess(
-            name=name,
-            description=kwargs.get('description', f"A test post process for {name}")
+            name=name
         )
         db_session.add(post_process)
         db_session.commit()
@@ -642,8 +640,7 @@ def test_fixtures(test_users, db_session, mock_airtable):
             db_session = db.session
 
         machine = Machine(
-            name=name,
-            description=kwargs.get('description', f"A test machine for {name}")
+            name=name
         )
         db_session.add(machine)
         db_session.commit()
@@ -657,8 +654,7 @@ def test_fixtures(test_users, db_session, mock_airtable):
             db_session = db.session
 
         post_process = PostProcess(
-            name=name,
-            description=kwargs.get('description', f"A test post process for {name}")
+            name=name
         )
         db_session.add(post_process)
         db_session.commit()

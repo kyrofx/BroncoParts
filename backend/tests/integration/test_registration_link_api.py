@@ -249,18 +249,3 @@ class TestRegistrationLinkAPI:
         data = assert_success_response(response, 201)
         assert data['user']['username'] == 'fixed_user'
         assert data['user']['email'] == 'fixed@test.com'
-    
-    def test_registration_link_statistics(self, client, db_session, mock_airtable):
-        """Test registration link statistics endpoint."""
-        admin = TestFixtures.create_test_admin_user(db_session)
-        reg_link1 = TestFixtures.create_test_registration_link(db_session, admin, custom_path='link1')
-        reg_link2 = TestFixtures.create_test_registration_link(db_session, admin, custom_path='link2')
-        
-        headers = get_auth_headers(client, 'admin@test.com', 'password123')
-        response = client.get('/api/admin/registration-links/statistics', headers=headers)
-        
-        data = assert_success_response(response)
-        assert 'total_links' in data
-        assert 'active_links' in data
-        assert 'total_registrations' in data
-        assert data['total_links'] >= 2

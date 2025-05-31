@@ -28,6 +28,7 @@ import EditUser from './components/EditUser';
 import AdminRegistrationLinks from './components/AdminRegistrationLinks'; // Import new component
 import RegisterViaLink from './components/RegisterViaLink'; // Import for public registration route
 import ProjectTreeView from './components/ProjectTreeView'; // Added ProjectTreeView
+import MachinesPostProcesses from './components/MachinesPostProcesses'; // Import MachinesPostProcesses component
 
 // Keep other placeholders for now, or create basic versions of them
 // const CreateProject = () => <h2>Create New Project</h2>; // Remove placeholder
@@ -84,7 +85,7 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              
+
               <Route 
                 path="/projects" 
                 element={
@@ -224,6 +225,14 @@ function App() {
               <Route 
                 path="/register/:linkIdentifier" 
                 element={<RegisterViaLink />} 
+              />
+              <Route 
+                path="/machines-postprocesses" 
+                element={
+                  <ProtectedRoute>
+                    <MachinesPostProcesses />
+                  </ProtectedRoute>
+                } 
               />
             </Routes>
           </Container>
