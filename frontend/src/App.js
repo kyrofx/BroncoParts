@@ -240,7 +240,7 @@ function App() {
           {/* Footer can be added here if needed */}
           <Box component="footer" sx={{ bgcolor: 'background.paper', py: 2, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
-              BroncoParts, a fork of CheesyParts. Developed by Eddie Gu (not a future Broncoan).
+              BroncoParts by kyrofx, for the Bronco Racing team.
             </Typography>
           </Box>
         </Box>
