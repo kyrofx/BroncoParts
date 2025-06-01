@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Define the base URL for the API. 
 // You might want to make this configurable based on environment (dev/prod)
-const API_BASE_URL = 'http://localhost:8000/api'; // Adjust if your backend runs on a different port
+const API_URL = 'https://partsapi.kyro.dog/api';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,

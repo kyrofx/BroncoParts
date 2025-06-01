@@ -31,6 +31,10 @@ def create_app():
         raise ValueError("No JWT_SECRET_KEY set for Flask application in production environment.")
     app.config['JWT_SECRET_KEY'] = jwt_secret_key or 'super-secret-dev-key' # Fallback for dev only
 
+    from datetime import timedelta
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=8) 
+    app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)  
+
     # Airtable Configuration
     app.config['AIRTABLE_API_KEY'] = os.environ.get('AIRTABLE_API_KEY') # Removed default
     app.config['AIRTABLE_BASE_ID'] = os.environ.get('AIRTABLE_BASE_ID') # Removed default

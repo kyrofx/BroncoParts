@@ -13,7 +13,7 @@ AIRTABLE_MANUFACTURING_QUANTITY = "Manufacturing Quantity"
 AIRTABLE_STATUS = "Status"
 AIRTABLE_MACHINE = "Machine"
 AIRTABLE_RAW_MATERIAL = "Raw material"
-AIRTABLE_POST_PROCESS = "Post-process"
+AIRTABLE_POST_PROCESS = "Processes"
 AIRTABLE_NOTES = "Notes"
 # Add any other constants if needed, e.g., for fields not explicitly listed for disregard but still synced
 # AIRTABLE_PART_NUMBER = "Part Number" # Example, if you decide to sync it despite "disregard" note

@@ -535,7 +535,7 @@ def get_machine_airtable_options():
         options = get_airtable_select_options(table, AIRTABLE_MACHINE)
         return jsonify(options=options)
     except Exception as e:
-        current_app.logger.error(f"Error fetching machine options from Airtable: {e}")
+        app.logger.error(f"Error fetching machine options from Airtable: {e}")
         return jsonify(message=f"Error: {str(e)}", options=[]), 500
 
 @app.route('/api/machines', methods=['POST'])
@@ -626,7 +626,7 @@ def sync_machines_with_airtable():
         ), 200
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error syncing machines with Airtable: {e}")
+        app.logger.error(f"Error syncing machines with Airtable: {e}")
         return jsonify(message=f"Error: {str(e)}"), 500
 
 # --- PostProcess Routes ---
@@ -648,7 +648,7 @@ def get_post_process_airtable_options():
         options = get_airtable_select_options(table, AIRTABLE_POST_PROCESS)
         return jsonify(options=options)
     except Exception as e:
-        current_app.logger.error(f"Error fetching post process options from Airtable: {e}")
+        app.logger.error(f"Error fetching post process options from Airtable: {e}")
         return jsonify(message=f"Error: {str(e)}", options=[]), 500
 
 @app.route('/api/post-processes', methods=['POST'])
@@ -739,7 +739,7 @@ def sync_post_processes_with_airtable():
         ), 200
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error syncing post processes with Airtable: {e}")
+        app.logger.error(f"Error syncing post processes with Airtable: {e}")
         return jsonify(message=f"Error: {str(e)}"), 500
 
 # --- Project Specific Assemblies ---
