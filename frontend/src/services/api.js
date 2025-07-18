@@ -5,7 +5,7 @@ import axios from 'axios';
 const API_URL = 'https://partsapi.kyro.dog/api';
 
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
     // You can add other default headers here, like Authorization for JWT tokens
