@@ -1,11 +1,12 @@
 from flask import Blueprint, jsonify, request
 from flask import current_app as app
-from .models import db, Project, Part, User, Order, OrderItem, RegistrationLink, Machine, PostProcess # Added Machine, PostProcess
+from .models import db, Project, Part, User, Order, OrderItem, RegistrationLink, Machine, PostProcess, OnshapeProjectSetting
 from decimal import Decimal
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt # Import JWT functions
 from .decorators import admin_required, editor_or_admin_required, readonly_or_higher_required
 from datetime import datetime
 from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field, get_airtable_table, get_airtable_select_options, add_option_via_typecast, AIRTABLE_MACHINE, AIRTABLE_POST_PROCESS # Import the Airtable service and functions
+from .services.onshape_service import process_onshape_webhook
 import uuid # Ensure uuid is imported at the top if not already fully present
 
 @app.route('/api/hello')
@@ -2029,6 +2030,36 @@ def register_user_via_link(link_identifier):
         'created_at': new_user.created_at.isoformat()
     }
     return jsonify(message=f"User {new_user.username} created successfully via registration link.", user=user_data), 201
+
+
+@app.route('/api/onshape/webhook', methods=['POST'])
+def onshape_webhook():
+    data = request.get_json() or {}
+    process_onshape_webhook(data)
+    return jsonify(status='received'), 200
+
+
+@app.route('/api/projects/<int:project_id>/onshape-settings', methods=['GET', 'POST'])
+@admin_required
+def onshape_project_settings(project_id):
+    project = Project.query.get_or_404(project_id)
+    settings = OnshapeProjectSetting.query.filter_by(project_id=project.id).first()
+
+    if request.method == 'GET':
+        return jsonify(settings=settings.to_dict() if settings else None)
+
+    data = request.get_json() or {}
+    if not settings:
+        settings = OnshapeProjectSetting(project_id=project.id)
+        db.session.add(settings)
+
+    settings.client_id = data.get('client_id')
+    settings.client_secret = data.get('client_secret')
+    settings.part_number_format = data.get('part_number_format')
+    settings.base_url = data.get('base_url', settings.base_url)
+
+    db.session.commit()
+    return jsonify(message='Settings saved', settings_id=settings.id)
 
 @app.route('/api/admin/create_user_via_link', methods=['POST'])
 @admin_required # Assuming admin rights are needed to create users this way
