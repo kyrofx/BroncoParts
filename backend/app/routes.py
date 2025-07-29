@@ -1,11 +1,12 @@
 from flask import Blueprint, jsonify, request
 from flask import current_app as app
-from .models import db, Project, Part, User, Order, OrderItem, RegistrationLink, Machine, PostProcess # Added Machine, PostProcess
+from .models import db, Project, Part, User, Order, OrderItem, RegistrationLink, Machine, PostProcess, OnshapeConfig
 from decimal import Decimal
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt # Import JWT functions
 from .decorators import admin_required, editor_or_admin_required, readonly_or_higher_required
 from datetime import datetime
-from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field, get_airtable_table, get_airtable_select_options, add_option_via_typecast, AIRTABLE_MACHINE, AIRTABLE_POST_PROCESS # Import the Airtable service and functions
+from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field, get_airtable_table, get_airtable_select_options, add_option_via_typecast, AIRTABLE_MACHINE, AIRTABLE_POST_PROCESS
+from .services.onshape_service import OnshapeService
 import uuid # Ensure uuid is imported at the top if not already fully present
 
 @app.route('/api/hello')
@@ -2101,3 +2102,54 @@ def admin_create_user_via_link():
         'created_at': new_user.created_at.isoformat()
     }
     return jsonify(message=f"User {new_user.username} created successfully via registration link.", user=user_data), 201
+
+# --- Onshape Integration ---
+
+@app.route('/api/onshape/webhook', methods=['POST'])
+def onshape_webhook():
+    data = request.json or {}
+    document_id = data.get('documentId') or data.get('documentId')
+    workspace_id = data.get('workspaceId') or data.get('workspaceId')
+    if not document_id or not workspace_id:
+        return jsonify(message='Missing document or workspace id'), 400
+    config = OnshapeConfig.query.filter_by(document_id=document_id, workspace_id=workspace_id).first()
+    if not config:
+        return jsonify(message='No matching Onshape config'), 404
+    service = OnshapeService(config)
+    try:
+        updated = service.assign_part_numbers()
+    except Exception as e:
+        app.logger.error(f'Onshape webhook error: {e}')
+        return jsonify(message='Error processing webhook'), 500
+    return jsonify(updated=updated)
+
+@app.route('/api/projects/<int:project_id>/onshape-config', methods=['GET', 'PUT', 'POST'])
+@admin_required
+def manage_onshape_config(project_id):
+    project = Project.query.get_or_404(project_id)
+    config = OnshapeConfig.query.filter_by(project_id=project.id).first()
+    if request.method == 'GET':
+        if not config:
+            return jsonify(config=None)
+        return jsonify(config={
+            'document_id': config.document_id,
+            'workspace_id': config.workspace_id,
+            'element_id': config.element_id,
+            'number_format': config.number_format,
+            'counter': config.counter
+        })
+    data = request.json or {}
+    if not config:
+        config = OnshapeConfig(project_id=project.id)
+        db.session.add(config)
+    config.document_id = data.get('document_id', config.document_id)
+    config.workspace_id = data.get('workspace_id', config.workspace_id)
+    config.element_id = data.get('element_id', config.element_id)
+    config.client_id = data.get('client_id', config.client_id)
+    config.client_secret = data.get('client_secret', config.client_secret)
+    config.access_token = data.get('access_token', config.access_token)
+    config.refresh_token = data.get('refresh_token', config.refresh_token)
+    config.number_format = data.get('number_format', config.number_format)
+    db.session.commit()
+    return jsonify(message='Config saved')
+

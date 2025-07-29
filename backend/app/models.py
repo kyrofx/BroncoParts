@@ -148,6 +148,29 @@ class Project(db.Model):
     def __repr__(self):
         return f'<Project {self.name}>'
 
+
+class OnshapeConfig(db.Model):
+    __tablename__ = 'onshape_configs'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), unique=True, nullable=False)
+    document_id = db.Column(db.String(100), nullable=False)
+    workspace_id = db.Column(db.String(100), nullable=False)
+    element_id = db.Column(db.String(100), nullable=False)
+    client_id = db.Column(db.String(255), nullable=True)
+    client_secret = db.Column(db.String(255), nullable=True)
+    access_token = db.Column(db.String(512), nullable=True)
+    refresh_token = db.Column(db.String(512), nullable=True)
+    token_expires_at = db.Column(db.DateTime, nullable=True)
+    number_format = db.Column(db.String(100), default='{prefix}-{counter:04d}')
+    counter = db.Column(db.Integer, default=1)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    project = db.relationship('Project', backref=db.backref('onshape_config', uselist=False))
+
+    def __repr__(self):
+        return f'<OnshapeConfig {self.project_id} doc:{self.document_id}>'
+
 class Machine(db.Model):
     __tablename__ = 'machines'
     id = db.Column(db.Integer, primary_key=True)
