@@ -274,6 +274,17 @@ function ProjectDetails() {
                         >
                             Edit Project
                         </Button>
+                        {user?.permission === 'admin' && (
+                          <Button
+                            variant="outlined"
+                            color="secondary"
+                            component={RouterLink}
+                            to={`/projects/${projectId}/onshape-settings`}
+                            sx={{ mr: 1 }}
+                          >
+                            Onshape Settings
+                          </Button>
+                        )}
                         <Button
                             variant="outlined"
                             color="error"

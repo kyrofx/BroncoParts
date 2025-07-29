@@ -170,9 +170,25 @@ class TestProjectRoutes:
     @pytest.mark.api
     def test_delete_project_editor_forbidden(self, client, editor_token, sample_project):
         headers = get_auth_headers(editor_token)
-        
+
         response = client.delete(f'/api/projects/{sample_project.id}', headers=headers)
         assert response.status_code == 403
+
+    @pytest.mark.api
+    def test_onshape_config_crud(self, client, admin_token, sample_project):
+        headers = get_auth_headers(admin_token)
+
+        data = {
+            'document_id': 'doc123',
+            'workspace_id': 'ws123',
+            'naming_scheme': 'OS'
+        }
+        resp = client.put(f'/api/projects/{sample_project.id}/onshape', headers=headers, json=data)
+        assert resp.status_code == 200
+        fetched = client.get(f'/api/projects/{sample_project.id}/onshape', headers=headers)
+        assert fetched.status_code == 200
+        info = json.loads(fetched.data)
+        assert info['config']['document_id'] == 'doc123'
 
     @pytest.mark.api
     def test_get_project_tree(self, client, readonly_token, app, sample_project):
