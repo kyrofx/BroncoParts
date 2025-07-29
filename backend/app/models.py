@@ -265,3 +265,25 @@ class OrderItem(db.Model):
 
     def __repr__(self):
         return f'<OrderItem OrderID:{self.order_id} PartID:{self.part_id} Qty:{self.quantity}>'
+
+
+class OnshapeProjectSetting(db.Model):
+    __tablename__ = 'onshape_project_settings'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=False, unique=True)
+    client_id = db.Column(db.String(255))
+    client_secret = db.Column(db.String(255))
+    part_number_format = db.Column(db.String(100))
+    base_url = db.Column(db.String(255), default='https://cad.onshape.com')
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    project = db.relationship('Project', backref=db.backref('onshape_setting', uselist=False))
+
+    def to_dict(self):
+        return {
+            'client_id': self.client_id,
+            'client_secret': self.client_secret,
+            'part_number_format': self.part_number_format,
+            'base_url': self.base_url,
+        }

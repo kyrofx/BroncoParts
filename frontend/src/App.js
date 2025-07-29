@@ -31,6 +31,7 @@ import RegisterViaLink from './components/RegisterViaLink'; // Import for public
 import UserSettings from './components/UserSettings'; // + Import UserSettings
 import ProjectTreeView from './components/ProjectTreeView'; // Added ProjectTreeView
 import MachinesPostProcesses from './components/MachinesPostProcesses'; // Import MachinesPostProcesses component
+import OnshapeSettings from './components/OnshapeSettings';
 
 // Keep other placeholders for now, or create basic versions of them
 // const CreateProject = () => <h2>Create New Project</h2>; // Remove placeholder
@@ -170,11 +171,19 @@ const AppNavigation = () => {
               </ProtectedRoute>
             } 
           />
-          <Route 
+          <Route
             path="/projects/:projectId/edit"
             element={
               <ProtectedRoute>
                 <EditProject />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/projects/:projectId/onshape-settings"
+            element={
+              <ProtectedRoute>
+                <OnshapeSettings />
               </ProtectedRoute>
             }
           />
