@@ -9,7 +9,7 @@ import os # Import os module
 db = SQLAlchemy()
 migrate = Migrate()
 
-def create_app():
+def create_app(test_config=None):
     app = Flask(__name__)
 
     # Configuration settings
@@ -94,6 +94,10 @@ def create_app():
     def handle_method_not_allowed(e):
         """Handle method not allowed errors with JSON response."""
         return jsonify(message="Error: Method not allowed"), 405
+
+    # Apply test configuration if provided
+    if test_config:
+        app.config.update(test_config)
 
     with app.app_context():
         from . import routes

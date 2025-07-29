@@ -89,8 +89,8 @@ const Register = () => {
             required
           />
         </div>
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-        {success && <p style={{ color: 'green' }}>{success}</p>}
+        {error && <p sx={{ color: 'error.main' }}>{error}</p>}
+        {success && <p sx={{ color: 'success.main' }}>{success}</p>}
         <button type="submit" disabled={loading}>
           {loading ? 'Registering...' : 'Register'}
         </button>

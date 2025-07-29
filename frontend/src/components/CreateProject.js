@@ -91,7 +91,7 @@ const CreateProject = () => {
             Hide from main dashboards
           </label>
         </div>
-        {error && <p style={{ color: 'red' }}>{error}</p>}
+        {error && <p sx={{ color: 'error.main' }}>{error}</p>}
         <button type="submit" disabled={loading}>
           {loading ? 'Creating Project...' : 'Create Project'}
         </button>

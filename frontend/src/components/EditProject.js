@@ -80,7 +80,7 @@ function EditProject() {
         return <p>You do not have permission to edit this project.</p>;
     }
 
-    if (error && !projectData.name && !isLoading) return <p style={{ color: 'red' }}>{error}</p>; // Show error if initial fetch failed
+    if (error && !projectData.name && !isLoading) return <p sx={{ color: 'error.main' }}>{error}</p>; // Show error if initial fetch failed
 
     return (
         <div className="container mt-4">

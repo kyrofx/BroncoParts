@@ -35,7 +35,7 @@ function ProjectDashboardParts() {
     }, [projectId]);
 
     if (loading) return <p>Loading project parts...</p>;
-    if (error) return <p style={{ color: 'red' }}>{error}</p>;
+    if (error) return <p sx={{ color: 'error.main' }}>{error}</p>;
     if (!project) return <p>Project not found.</p>;
 
     return (

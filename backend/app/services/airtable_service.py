@@ -376,7 +376,7 @@ def sync_part_to_airtable(part: Part):
     airtable_data = {}
 
     # Name (Text field - usually no options to validate)
-    airtable_data[AIRTABLE_NAME] = f"{part.part_number} - {part.name}"
+    airtable_data[AIRTABLE_NAME] = f"{part.part_number}: {part.name}"
 
     # Subteam (Select field)
     if part.subteam:

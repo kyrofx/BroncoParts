@@ -71,7 +71,7 @@ function AccountManagement() {
     }
 
     if (isLoading) return <p>Loading accounts...</p>;
-    if (error && users.length === 0) return <p style={{ color: 'red' }}>{error}</p>; // Show error if loading failed and no users
+    if (error && users.length === 0) return <p sx={{ color: 'error.main' }}>{error}</p>; // Show error if loading failed and no users
 
     return (
         <div className="container mt-4">

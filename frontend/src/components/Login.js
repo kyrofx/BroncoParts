@@ -48,7 +48,7 @@ const Login = () => {
             required
           />
         </div>
-        {error && <p style={{ color: 'red' }}>{error}</p>}
+        {error && <p sx={{ color: 'error.main' }}>{error}</p>}
         <button type="submit" disabled={loading}>
           {loading ? 'Logging in...' : 'Login'}
         </button>

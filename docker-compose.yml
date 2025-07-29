@@ -4,7 +4,7 @@ services:
   db:
     image: mysql:8.0
     container_name: broncoparts_db_prod
-    restart: always
+    restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${DB_NAME:-broncoparts_prod} # Default to broncoparts_prod if not set
       MYSQL_USER: ${DB_USER:-bp_user}
@@ -28,7 +28,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: broncoparts_backend_prod
-    restart: always
+    restart: unless-stopped
     environment:
       FLASK_ENV: production
       DATABASE_URL: mysql+pymysql://${DB_USER:-bp_user}:${DB_PASSWORD:-changeme}@db:3306/${DB_NAME:-broncoparts_prod}
@@ -53,7 +53,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: broncoparts_frontend_prod
-    restart: always
+    restart: unless-stopped
     ports:
       - "8080:80" # Map host port 8080 to Nginx container port 80
     depends_on:

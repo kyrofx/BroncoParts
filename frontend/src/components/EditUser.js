@@ -102,7 +102,7 @@ function EditUser() {
     }
 
     if (isLoading) return <p>Loading user details...</p>;
-    if (error && !userData.email) return <p style={{ color: 'red' }}>{error}</p>; // Show error if loading failed
+    if (error && !userData.email) return <p sx={{ color: 'error.main' }}>{error}</p>; // Show error if loading failed
 
     return (
         <div className="container mt-4">

@@ -111,7 +111,7 @@ function PartDetails() {
     };
 
     if (loading) return <p>Loading part details...</p>;
-    if (error) return <p style={{ color: 'red' }}>{error}</p>;
+    if (error) return <p sx={{ color: 'error.main' }}>{error}</p>;
     if (!part) return <p>Part not found.</p>;
 
     const canEdit = user?.permissions?.includes('admin') || user?.permissions?.includes('engineer');

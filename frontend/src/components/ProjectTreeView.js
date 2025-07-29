@@ -67,10 +67,11 @@ const ProjectTreeView = () => {
           <foreignObject {...foreignObjectPropsInternal}>
             <Box 
                 sx={{ 
-                    border: '1px solid lightgray', 
-                    borderRadius: '4px', 
+                    border: 1, 
+                    borderColor: 'divider',
+                    borderRadius: 1, 
                     p: 1, 
-                    backgroundColor: 'white',
+                    backgroundColor: 'background.paper',
                     textAlign: 'center',
                     cursor: 'pointer'
                 }}
@@ -103,7 +104,7 @@ const ProjectTreeView = () => {
                     </Button>
                 </Box>
             </Paper>
-            <Box sx={{ flexGrow: 1, border: '1px solid #ddd', borderRadius: '4px', backgroundColor: '#f9f9f9' }}>
+            <Box sx={{ flexGrow: 1, border: 1, borderColor: 'divider', borderRadius: 1, backgroundColor: 'background.default' }}>
                 <Tree
                     data={treeData}
                     orientation="vertical"

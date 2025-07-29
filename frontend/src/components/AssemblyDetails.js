@@ -221,7 +221,7 @@ function AssemblyDetails() {
 
             <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} aria-label="breadcrumb" sx={{ mb: 2 }}>
                 {project && (
-                    <RouterLink to={`/projects/${project.id}`} style={{textDecoration: 'none', color: 'inherit'}}>
+                    <RouterLink to={`/projects/${project.id}`} sx={{textDecoration: 'none', color: 'inherit'}}>
                         {project.name}
                     </RouterLink>
                 )}
@@ -229,7 +229,7 @@ function AssemblyDetails() {
                     index === breadcrumbParts.length - 1 ? (
                         <Typography key={bp.id} color="text.primary">{bp.name}</Typography>
                     ) : (
-                        <RouterLink key={bp.id} to={bp.type === 'assembly' ? `/assemblies/${bp.id}` : `/parts/${bp.id}`} style={{textDecoration: 'none', color: 'inherit'}}>
+                        <RouterLink key={bp.id} to={bp.type === 'assembly' ? `/assemblies/${bp.id}` : `/parts/${bp.id}`} sx={{textDecoration: 'none', color: 'inherit'}}>
                             {bp.name}
                         </RouterLink>
                     )

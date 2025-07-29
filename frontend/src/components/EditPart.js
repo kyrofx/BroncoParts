@@ -32,7 +32,7 @@ const accordionSummarySx = {
         backgroundColor: 'transparent',
     },
     '&:hover': {
-        backgroundColor: 'rgba(0, 0, 0, 0.03)', // Very subtle hover for discoverability
+        backgroundColor: 'action.hover', // Very subtle hover for discoverability
     },
     '& .MuiAccordionSummary-content': {
         margin: '8px 0', // Adjust vertical spacing of the content (the Typography)
@@ -442,10 +442,10 @@ function EditPart() {
                                     sx={{ 
                                         mr: 1.5, 
                                         color: 'text.secondary', 
-                                        borderColor: 'rgba(0, 0, 0, 0.23)',
+                                        borderColor: 'divider',
                                         '&:hover': {
-                                            backgroundColor: 'rgba(0, 0, 0, 0.04)', 
-                                            borderColor: 'rgba(0, 0, 0, 0.3)',
+                                            backgroundColor: 'action.hover', 
+                                            borderColor: 'text.primary',
                                         }
                                     }} 
                                     variant="outlined"
@@ -458,7 +458,7 @@ function EditPart() {
                                     color="primary" 
                                     disabled={isLoading}
                                 >
-                                    {isLoading ? <CircularProgress size={24} sx={{ color: 'white' }} /> : `Update ${originalPartData.type}`}
+                                    {isLoading ? <CircularProgress size={24} sx={{ color: 'primary.contrastText' }} /> : `Update ${originalPartData.type}`}
                                 </Button>
                             </Box>
                         </Grid>
