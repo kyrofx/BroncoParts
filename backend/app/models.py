@@ -138,6 +138,8 @@ class Project(db.Model):
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
     prefix = db.Column(db.String(10), unique=True) # Assuming prefix should be unique
+    onshape_document_id = db.Column(db.String(64), nullable=True)
+    onshape_workspace_id = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     hide_dashboards = db.Column(db.Boolean, default=False)
