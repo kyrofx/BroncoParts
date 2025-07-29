@@ -95,6 +95,23 @@ def update_project(project_id):
         'updated_at': project.updated_at.isoformat()
     })
 
+
+@app.route('/api/projects/<int:project_id>/airtable-keys', methods=['PUT'])
+@admin_required
+def update_project_airtable_keys(project_id):
+    """Update Airtable API credentials for a project (admin only)."""
+    project = Project.query.get_or_404(project_id)
+    data = request.json
+    if not data:
+        return jsonify(message="Error: No input data provided"), 400
+
+    project.airtable_api_key = data.get('airtable_api_key', project.airtable_api_key)
+    project.airtable_base_id = data.get('airtable_base_id', project.airtable_base_id)
+    project.airtable_table_id = data.get('airtable_table_id', project.airtable_table_id)
+
+    db.session.commit()
+    return jsonify(message="Airtable keys updated successfully")
+
 @app.route('/api/projects/<int:project_id>', methods=['DELETE'])
 @admin_required
 def delete_project(project_id):
@@ -444,7 +461,7 @@ def create_part():
                 # Conditions met: new_part.name should be an option for "Subsystem"
                 app.logger.info(f"Assembly '{new_part.name}' (ID: {new_part.id}) is under Subteam Assembly '{parent_assembly.name}' (ID: {parent_assembly.id}). Attempting to add its name to Airtable Subsystem field options.")
                 try:
-                    success = add_option_to_airtable_subsystem_field(new_part.name)
+                    success = add_option_to_airtable_subsystem_field(new_part.name, project)
                     if success:
                         app.logger.info(f"Successfully ensured '{new_part.name}' is an option in Airtable Subsystem field.")
                     else:

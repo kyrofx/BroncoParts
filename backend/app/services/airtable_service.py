@@ -19,9 +19,8 @@ AIRTABLE_NOTES = "Notes"
 # AIRTABLE_PART_NUMBER = "Part Number" # Example, if you decide to sync it despite "disregard" note
 
 # Helper function to update Airtable field choices via Metadata API
-def _update_airtable_field_choices(table: Table, field_name_to_update: str, new_choice_name: str) -> bool:
-    api_key = current_app.config.get('AIRTABLE_API_KEY')
-    base_id = current_app.config.get('AIRTABLE_BASE_ID')
+def _update_airtable_field_choices(table: Table, field_name_to_update: str, new_choice_name: str, project=None) -> bool:
+    api_key, base_id, _ = _get_airtable_config(project)
     # table.name should be the table ID or name used when initializing the pyairtable.Table object
     table_id_or_name = table.name 
 
@@ -144,7 +143,7 @@ def _update_airtable_field_choices(table: Table, field_name_to_update: str, new_
         return False
 
 # New public function to be called from routes.py
-def add_option_to_airtable_subsystem_field(new_option_name: str) -> bool:
+def add_option_to_airtable_subsystem_field(new_option_name: str, project=None) -> bool:
     """
     Attempts to add a new option to the Airtable Subsystem field.
     
@@ -159,7 +158,7 @@ def add_option_to_airtable_subsystem_field(new_option_name: str) -> bool:
     """
     # First try the proven typecast approach
     current_app.logger.info(f"Attempting to add option '{new_option_name}' to Airtable Subsystem field using typecast method")
-    result = add_option_via_typecast(new_option_name, AIRTABLE_SUBSYSTEM)
+    result = add_option_via_typecast(new_option_name, AIRTABLE_SUBSYSTEM, project=project)
     
     if result:
         current_app.logger.info(f"Successfully added option '{new_option_name}' using typecast method")
@@ -168,7 +167,7 @@ def add_option_to_airtable_subsystem_field(new_option_name: str) -> bool:
     # Fallback to the metadata API approach if typecast fails
     current_app.logger.warning(f"Typecast method failed for '{new_option_name}', trying metadata API approach")
     
-    table = get_airtable_table()
+    table = get_airtable_table(project)
     if not table:
         current_app.logger.error("Airtable table not initialized. Cannot add subsystem option.")
         log_manual_airtable_instructions(new_option_name, AIRTABLE_SUBSYSTEM)
@@ -176,7 +175,7 @@ def add_option_to_airtable_subsystem_field(new_option_name: str) -> bool:
     
     try:
         # AIRTABLE_SUBSYSTEM is "Subsystem"
-        result = _update_airtable_field_choices(table, AIRTABLE_SUBSYSTEM, new_option_name)
+        result = _update_airtable_field_choices(table, AIRTABLE_SUBSYSTEM, new_option_name, project)
         if not result:
             current_app.logger.warning(f"Could not automatically add '{new_option_name}' to Airtable Subsystem field using either method.")
             log_manual_airtable_instructions(new_option_name, AIRTABLE_SUBSYSTEM)
@@ -187,7 +186,7 @@ def add_option_to_airtable_subsystem_field(new_option_name: str) -> bool:
         return False
 
 
-def add_option_via_typecast(option_value: str, field_name: str, primary_field_value: str = None) -> bool:
+def add_option_via_typecast(option_value: str, field_name: str, project=None, primary_field_value: str = None) -> bool:
     """
     Adds a new option to an Airtable select field using the proven approach from airtable_new_option.py.
     This uses the direct Airtable API with typecast=True to create a temporary record, 
@@ -203,9 +202,7 @@ def add_option_via_typecast(option_value: str, field_name: str, primary_field_va
     Returns:
         bool: True if successful, False otherwise
     """
-    api_key = current_app.config.get('AIRTABLE_API_KEY')
-    base_id = current_app.config.get('AIRTABLE_BASE_ID')
-    table_id = current_app.config.get('AIRTABLE_TABLE_ID')
+    api_key, base_id, table_id = _get_airtable_config(project)
 
     if not all([api_key, base_id, table_id]):
         current_app.logger.error("Airtable configuration missing for option addition")
@@ -296,12 +293,12 @@ def add_option_via_typecast(option_value: str, field_name: str, primary_field_va
     return False
 
 
-def add_option_to_subsystem_field_improved(new_option_name: str) -> bool:
+def add_option_to_subsystem_field_improved(new_option_name: str, project=None) -> bool:
     """
     Improved version of add_option_to_airtable_subsystem_field that uses the proven approach.
     This should be used instead of the original function.
     """
-    return add_option_via_typecast(new_option_name, AIRTABLE_SUBSYSTEM)
+    return add_option_via_typecast(new_option_name, AIRTABLE_SUBSYSTEM, project=project)
 
 
 def get_airtable_select_options(table: Table, field_name: str) -> list[str]:
@@ -330,11 +327,26 @@ def get_airtable_select_options(table: Table, field_name: str) -> list[str]:
         current_app.logger.error(f"Error fetching Airtable schema or options for field \'{field_name}\': {e}")
         return []
 
-def get_airtable_table():
-    # Initializes and returns an Airtable Table object based on app configuration. 
+def _get_airtable_config(project=None):
+    """Return Airtable credentials for a project, falling back to app config."""
     api_key = current_app.config.get('AIRTABLE_API_KEY')
     base_id = current_app.config.get('AIRTABLE_BASE_ID')
     table_id = current_app.config.get('AIRTABLE_TABLE_ID')
+
+    if project is not None:
+        if getattr(project, 'airtable_api_key', None):
+            api_key = project.airtable_api_key
+        if getattr(project, 'airtable_base_id', None):
+            base_id = project.airtable_base_id
+        if getattr(project, 'airtable_table_id', None):
+            table_id = project.airtable_table_id
+
+    return api_key, base_id, table_id
+
+
+def get_airtable_table(project=None):
+    """Initializes and returns an Airtable Table object."""
+    api_key, base_id, table_id = _get_airtable_config(project)
 
     if not api_key or api_key == 'YOUR_AIRTABLE_API_KEY': # Check against placeholder
         current_app.logger.error("Airtable API Key not configured or is using placeholder.")
@@ -367,7 +379,7 @@ def sync_part_to_airtable(part: Part):
     Returns:
         dict: The Airtable record if successful, None otherwise.
     """
-    table = get_airtable_table()
+    table = get_airtable_table(part.project)
     if not table:
         current_app.logger.error(f"Airtable sync for part {part.part_number} failed: Table object not initialized.")
         return None

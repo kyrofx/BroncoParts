@@ -141,6 +141,11 @@ class Project(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     hide_dashboards = db.Column(db.Boolean, default=False)
+
+    # Optional Airtable configuration for this project
+    airtable_api_key = db.Column(db.String(100), nullable=True)
+    airtable_base_id = db.Column(db.String(50), nullable=True)
+    airtable_table_id = db.Column(db.String(50), nullable=True)
     
     parts = db.relationship('Part', backref='project', lazy=True)
     orders = db.relationship('Order', backref='project', lazy=True)
