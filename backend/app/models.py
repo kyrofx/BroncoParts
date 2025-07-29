@@ -141,6 +141,14 @@ class Project(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     hide_dashboards = db.Column(db.Boolean, default=False)
+
+    # --- Onshape integration fields ---
+    onshape_document_id = db.Column(db.String(100), nullable=True)
+    onshape_workspace_id = db.Column(db.String(100), nullable=True)
+    onshape_access_token = db.Column(db.String(255), nullable=True)
+    onshape_refresh_token = db.Column(db.String(255), nullable=True)
+    onshape_webhook_id = db.Column(db.String(100), nullable=True)
+    onshape_next_part_number = db.Column(db.Integer, default=1)
     
     parts = db.relationship('Part', backref='project', lazy=True)
     orders = db.relationship('Order', backref='project', lazy=True)

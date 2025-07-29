@@ -11,7 +11,10 @@ function EditProject() {
     const [projectData, setProjectData] = useState({
         name: '',
         description: '',
-        prefix: ''
+        prefix: '',
+        onshape_document_id: '',
+        onshape_workspace_id: '',
+        onshape_access_token: ''
     });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
@@ -25,7 +28,10 @@ function EditProject() {
                 setProjectData({
                     name: fetchedProject.name || '',
                     description: fetchedProject.description || '',
-                    prefix: fetchedProject.prefix || ''
+                    prefix: fetchedProject.prefix || '',
+                    onshape_document_id: fetchedProject.onshape_document_id || '',
+                    onshape_workspace_id: fetchedProject.onshape_workspace_id || '',
+                    onshape_access_token: fetchedProject.onshape_access_token || ''
                 });
                 setError('');
             } catch (err) {
@@ -112,17 +118,50 @@ function EditProject() {
                 </div>
                 <div className="mb-3">
                     <label htmlFor="prefix" className="form-label">Prefix</label>
-                    <input 
-                        type="text" 
-                        className="form-control" 
-                        id="prefix" 
-                        name="prefix" 
-                        value={projectData.prefix} 
-                        onChange={handleChange} 
-                        required 
+                    <input
+                        type="text"
+                        className="form-control"
+                        id="prefix"
+                        name="prefix"
+                        value={projectData.prefix}
+                        onChange={handleChange}
+                        required
                         maxLength="10" // Assuming a reasonable max length for prefix
                     />
                      <small className="form-text text-muted">Short prefix for part numbers. Max 10 characters.</small>
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="onshape_document_id" className="form-label">Onshape Document ID</label>
+                    <input
+                        type="text"
+                        className="form-control"
+                        id="onshape_document_id"
+                        name="onshape_document_id"
+                        value={projectData.onshape_document_id}
+                        onChange={handleChange}
+                    />
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="onshape_workspace_id" className="form-label">Onshape Workspace ID</label>
+                    <input
+                        type="text"
+                        className="form-control"
+                        id="onshape_workspace_id"
+                        name="onshape_workspace_id"
+                        value={projectData.onshape_workspace_id}
+                        onChange={handleChange}
+                    />
+                </div>
+                <div className="mb-3">
+                    <label htmlFor="onshape_access_token" className="form-label">Onshape Access Token</label>
+                    <input
+                        type="text"
+                        className="form-control"
+                        id="onshape_access_token"
+                        name="onshape_access_token"
+                        value={projectData.onshape_access_token}
+                        onChange={handleChange}
+                    />
                 </div>
                 
                 <button type="submit" className="btn btn-primary" disabled={isLoading || !canEditProject}>

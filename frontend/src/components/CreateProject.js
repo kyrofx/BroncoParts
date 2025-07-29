@@ -8,6 +8,9 @@ const CreateProject = () => {
   const [prefix, setPrefix] = useState('');
   const [description, setDescription] = useState('');
   const [hideDashboards, setHideDashboards] = useState(false);
+  const [onshapeDocumentId, setOnshapeDocumentId] = useState('');
+  const [onshapeWorkspaceId, setOnshapeWorkspaceId] = useState('');
+  const [onshapeAccessToken, setOnshapeAccessToken] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -37,6 +40,9 @@ const CreateProject = () => {
         prefix,
         description,
         hide_dashboards: hideDashboards,
+        onshape_document_id: onshapeDocumentId,
+        onshape_workspace_id: onshapeWorkspaceId,
+        onshape_access_token: onshapeAccessToken,
       };
       const response = await api.post('/projects', projectData);
       alert('Project created successfully!'); // Replace with a more subtle notification
@@ -78,6 +84,33 @@ const CreateProject = () => {
             id="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="onshapeDocumentId">Onshape Document ID:</label>
+          <input
+            type="text"
+            id="onshapeDocumentId"
+            value={onshapeDocumentId}
+            onChange={(e) => setOnshapeDocumentId(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="onshapeWorkspaceId">Onshape Workspace ID:</label>
+          <input
+            type="text"
+            id="onshapeWorkspaceId"
+            value={onshapeWorkspaceId}
+            onChange={(e) => setOnshapeWorkspaceId(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="onshapeAccessToken">Onshape Access Token:</label>
+          <input
+            type="text"
+            id="onshapeAccessToken"
+            value={onshapeAccessToken}
+            onChange={(e) => setOnshapeAccessToken(e.target.value)}
           />
         </div>
         <div>
