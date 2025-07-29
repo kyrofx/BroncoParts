@@ -132,6 +132,9 @@ Modern parts management tool for engineering teams and projects. Fully integrate
 - Configure your Airtable API key, base ID, and table ID in environment variables or the relevant scripts.
 - Use scripts in `backend/testing/` to test Airtable sync and option creation.
 
+## Onshape Integration
+BroncoParts can automatically number new parts created in Onshape. Configure each project's document and workspace IDs plus OAuth credentials via the new **Onshape Settings** page. When the Onshape webhook fires, the backend assigns a part number using the project's naming scheme and stores it in the Onshape part metadata and in BroncoParts.
+
 ## Testing
 - Run backend tests with:
   ```sh

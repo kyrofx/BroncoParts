@@ -265,3 +265,37 @@ class OrderItem(db.Model):
 
     def __repr__(self):
         return f'<OrderItem OrderID:{self.order_id} PartID:{self.part_id} Qty:{self.quantity}>'
+
+
+class OnshapeProjectConfig(db.Model):
+    """Stores Onshape integration settings for a project."""
+    __tablename__ = 'onshape_project_configs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=False, unique=True)
+    document_id = db.Column(db.String(100), nullable=False)
+    workspace_id = db.Column(db.String(100), nullable=False)
+    naming_scheme = db.Column(db.String(100), nullable=True)
+    client_id = db.Column(db.String(255), nullable=True)
+    client_secret = db.Column(db.String(255), nullable=True)
+    access_token = db.Column(db.String(255), nullable=True)
+    refresh_token = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    project = db.relationship('Project', backref=db.backref('onshape_config', uselist=False))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'project_id': self.project_id,
+            'document_id': self.document_id,
+            'workspace_id': self.workspace_id,
+            'naming_scheme': self.naming_scheme,
+            'client_id': self.client_id,
+            'client_secret': self.client_secret,
+            'access_token': self.access_token,
+            'refresh_token': self.refresh_token,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }

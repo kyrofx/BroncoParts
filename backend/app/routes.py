@@ -1,11 +1,12 @@
 from flask import Blueprint, jsonify, request
 from flask import current_app as app
-from .models import db, Project, Part, User, Order, OrderItem, RegistrationLink, Machine, PostProcess # Added Machine, PostProcess
+from .models import db, Project, Part, User, Order, OrderItem, RegistrationLink, Machine, PostProcess, OnshapeProjectConfig
 from decimal import Decimal
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt # Import JWT functions
 from .decorators import admin_required, editor_or_admin_required, readonly_or_higher_required
 from datetime import datetime
-from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field, get_airtable_table, get_airtable_select_options, add_option_via_typecast, AIRTABLE_MACHINE, AIRTABLE_POST_PROCESS # Import the Airtable service and functions
+from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field, get_airtable_table, get_airtable_select_options, add_option_via_typecast, AIRTABLE_MACHINE, AIRTABLE_POST_PROCESS
+from .services.onshape_service import OnshapeService, generate_part_number
 import uuid # Ensure uuid is imported at the top if not already fully present
 
 @app.route('/api/hello')
@@ -164,6 +165,67 @@ def get_project_tree(project_id):
         },
         "children": tree_children
     })
+
+
+@app.route('/api/projects/<int:project_id>/onshape', methods=['GET'])
+@admin_required
+def get_onshape_config(project_id):
+    project = Project.query.get_or_404(project_id)
+    config = OnshapeProjectConfig.query.filter_by(project_id=project.id).first()
+    if not config:
+        return jsonify(config=None)
+    return jsonify(config=config.to_dict())
+
+
+@app.route('/api/projects/<int:project_id>/onshape', methods=['PUT'])
+@admin_required
+def update_onshape_config(project_id):
+    Project.query.get_or_404(project_id)
+    data = request.json or {}
+    config = OnshapeProjectConfig.query.filter_by(project_id=project_id).first()
+    if not config:
+        config = OnshapeProjectConfig(project_id=project_id)
+        db.session.add(config)
+    config.document_id = data.get('document_id', config.document_id)
+    config.workspace_id = data.get('workspace_id', config.workspace_id)
+    config.naming_scheme = data.get('naming_scheme', config.naming_scheme)
+    config.client_id = data.get('client_id', config.client_id)
+    config.client_secret = data.get('client_secret', config.client_secret)
+    config.access_token = data.get('access_token', config.access_token)
+    config.refresh_token = data.get('refresh_token', config.refresh_token)
+    db.session.commit()
+    return jsonify(config=config.to_dict())
+
+
+@app.route('/api/onshape/webhook', methods=['POST'])
+def onshape_webhook():
+    event = request.json or {}
+    doc_id = event.get('documentId')
+    workspace_id = event.get('workspaceId')
+    config = OnshapeProjectConfig.query.filter_by(document_id=doc_id, workspace_id=workspace_id).first()
+    if not config:
+        app.logger.warning('Received Onshape webhook for unknown document %s', doc_id)
+        return jsonify(message='no matching project'), 200
+
+    service = OnshapeService(config)
+    parts = service.list_parts()
+    project = config.project
+    for p in parts:
+        metadata = service.get_part_metadata(p['elementId'], p['partId'])
+        if not service.extract_part_number(metadata):
+            number, num_id = generate_part_number(project, config)
+            if service.update_part_number(p['elementId'], p['partId'], number):
+                new_part = Part(
+                    numeric_id=num_id,
+                    part_number=number,
+                    name=p.get('name', 'Onshape Part'),
+                    project_id=project.id,
+                    type='part',
+                    quantity=1
+                )
+                db.session.add(new_part)
+    db.session.commit()
+    return jsonify(message='processed'), 200
 
 # --- Part Routes ---
 
