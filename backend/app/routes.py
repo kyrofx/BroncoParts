@@ -6,12 +6,27 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from .decorators import admin_required, editor_or_admin_required, readonly_or_higher_required
 from datetime import datetime
 from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field, get_airtable_table, get_airtable_select_options, add_option_via_typecast, AIRTABLE_MACHINE, AIRTABLE_POST_PROCESS # Import the Airtable service and functions
+from .services.onshape_service import OnshapeService
 import uuid # Ensure uuid is imported at the top if not already fully present
 
 @app.route('/api/hello')
 @readonly_or_higher_required
 def hello_world():
     return jsonify(message="Hello from Flask Backend!")
+
+# --- Onshape Webhook ---
+
+@app.route('/api/onshape-webhook', methods=['POST'])
+def onshape_webhook():
+    data = request.json or {}
+    document_id = data.get('documentId')
+    workspace_id = data.get('workspaceId')
+    project_prefix = data.get('projectPrefix', 'BP')
+    if not document_id or not workspace_id:
+        return jsonify(message="Missing document or workspace"), 400
+    service = OnshapeService()
+    service.process_document(document_id, workspace_id, project_prefix)
+    return jsonify(message="Webhook processed")
 
 # --- Project Routes ---
 

@@ -39,6 +39,10 @@ def create_app(test_config=None):
     app.config['AIRTABLE_API_KEY'] = os.environ.get('AIRTABLE_API_KEY') # Removed default
     app.config['AIRTABLE_BASE_ID'] = os.environ.get('AIRTABLE_BASE_ID') # Removed default
     app.config['AIRTABLE_TABLE_ID'] = os.environ.get('AIRTABLE_TABLE_ID') # Removed default
+
+    # Onshape configuration
+    app.config['ONSHAPE_BASE_URL'] = os.environ.get('ONSHAPE_BASE_URL', 'https://cad.onshape.com/api')
+    app.config['ONSHAPE_ACCESS_TOKEN'] = os.environ.get('ONSHAPE_ACCESS_TOKEN')
     
     # Ensure API key is set in production
     if not app.config['AIRTABLE_API_KEY'] and flask_env == 'production':

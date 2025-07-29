@@ -41,6 +41,9 @@ Modern parts management tool for engineering teams and projects. Fully integrate
   - Sync parts and assemblies to Airtable.
   - Add new options to Airtable single-select fields programmatically.
   - See code or contact maintainer for example Airtable setup.
+- **Onshape Integration:**
+  - Webhook listener assigns part numbers to new Onshape parts.
+  - Configurable via environment variables and project settings.
 - **Machine & Post-Process Management:**
   - Track machines, post-processes, and associate them with parts.
 - **REST API:**
@@ -131,6 +134,10 @@ Modern parts management tool for engineering teams and projects. Fully integrate
 ## Airtable Integration
 - Configure your Airtable API key, base ID, and table ID in environment variables or the relevant scripts.
 - Use scripts in `backend/testing/` to test Airtable sync and option creation.
+
+## Onshape Integration
+The backend exposes `/api/onshape-webhook` which processes webhook events from Onshape.
+Set `ONSHAPE_BASE_URL` and `ONSHAPE_ACCESS_TOKEN` in your environment to allow the service to update part metadata.
 
 ## Testing
 - Run backend tests with:

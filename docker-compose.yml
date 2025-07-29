@@ -38,6 +38,8 @@ services:
       AIRTABLE_API_KEY: ${AIRTABLE_API_KEY}
       AIRTABLE_BASE_ID: ${AIRTABLE_BASE_ID}
       AIRTABLE_TABLE_ID: ${AIRTABLE_TABLE_ID}
+      ONSHAPE_BASE_URL: ${ONSHAPE_BASE_URL}
+      ONSHAPE_ACCESS_TOKEN: ${ONSHAPE_ACCESS_TOKEN}
     ports:
       - "8000:8000" # Expose backend port for direct access if needed, or rely on frontend proxy
     depends_on:
