@@ -311,5 +311,44 @@ class TestProjectRoutes:
                 response = client.put(endpoint, json={})
             elif method == 'DELETE':
                 response = client.delete(endpoint)
-            
+
             assert response.status_code == 401
+
+    @pytest.mark.api
+    def test_update_airtable_keys(self, client, admin_token, sample_project):
+        headers = get_auth_headers(admin_token)
+        data = {
+            'airtable_api_key': 'proj-key',
+            'airtable_base_id': 'proj-base',
+            'airtable_table_id': 'proj-table'
+        }
+        response = client.put(
+            f'/api/projects/{sample_project.id}/airtable-keys',
+            headers=headers,
+            json=data
+        )
+        assert response.status_code == 200
+        with client.application.app_context():
+            proj = Project.query.get(sample_project.id)
+            assert proj.airtable_api_key == 'proj-key'
+            assert proj.airtable_base_id == 'proj-base'
+            assert proj.airtable_table_id == 'proj-table'
+
+    @pytest.mark.api
+    def test_update_airtable_keys_forbidden(self, client, editor_token, sample_project):
+        headers = get_auth_headers(editor_token)
+        response = client.put(
+            f'/api/projects/{sample_project.id}/airtable-keys',
+            headers=headers,
+            json={'airtable_api_key': 'k'}
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.api
+    def test_update_airtable_keys_requires_auth(self, client, sample_project):
+        response = client.put(
+            f'/api/projects/{sample_project.id}/airtable-keys',
+            json={'airtable_api_key': 'k'}
+        )
+        assert response.status_code == 401
+

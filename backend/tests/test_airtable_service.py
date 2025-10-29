@@ -204,7 +204,7 @@ class TestAirtableService:
             result = add_option_to_airtable_subsystem_field('New Subsystem')
             
             assert result is True
-            mock_typecast.assert_called_once_with('New Subsystem', AIRTABLE_SUBSYSTEM)
+            mock_typecast.assert_called_once_with('New Subsystem', AIRTABLE_SUBSYSTEM, project=None)
 
     @pytest.mark.unit
     @patch('app.services.airtable_service.add_option_via_typecast')
