@@ -132,6 +132,12 @@ Modern parts management tool for engineering teams and projects. Fully integrate
 - Configure your Airtable API key, base ID, and table ID in environment variables or the relevant scripts.
 - Use scripts in `backend/testing/` to test Airtable sync and option creation.
 
+## Onshape Integration
+Projects can link to an Onshape document and workspace. When a new part is detected
+via the webhook endpoint (`/api/onshape/webhook`), the backend assigns a custom
+part number based on the project's prefix and stores it in the part's "Part Number"
+metadata field.
+
 ## Testing
 - Run backend tests with:
   ```sh

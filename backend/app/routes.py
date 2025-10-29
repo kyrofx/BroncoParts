@@ -6,6 +6,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from .decorators import admin_required, editor_or_admin_required, readonly_or_higher_required
 from datetime import datetime
 from .services.airtable_service import sync_part_to_airtable, add_option_to_airtable_subsystem_field, get_airtable_table, get_airtable_select_options, add_option_via_typecast, AIRTABLE_MACHINE, AIRTABLE_POST_PROCESS # Import the Airtable service and functions
+from .services.onshape_service import OnshapeService
 import uuid # Ensure uuid is imported at the top if not already fully present
 
 @app.route('/api/hello')
@@ -26,7 +27,11 @@ def create_project():
         name=data['name'],
         prefix=data['prefix'],
         description=data.get('description'),
-        hide_dashboards=data.get('hide_dashboards', False)
+        hide_dashboards=data.get('hide_dashboards', False),
+        onshape_document_id=data.get('onshape_document_id'),
+        onshape_workspace_id=data.get('onshape_workspace_id'),
+        onshape_access_token=data.get('onshape_access_token'),
+        onshape_refresh_token=data.get('onshape_refresh_token')
     )
     db.session.add(new_project)
     db.session.commit()
@@ -36,6 +41,10 @@ def create_project():
         'prefix': new_project.prefix,
         'description': new_project.description,
         'hide_dashboards': new_project.hide_dashboards,
+        'onshape_document_id': new_project.onshape_document_id,
+        'onshape_workspace_id': new_project.onshape_workspace_id,
+        'onshape_access_token': new_project.onshape_access_token,
+        'onshape_refresh_token': new_project.onshape_refresh_token,
         'created_at': new_project.created_at.isoformat(),
         'updated_at': new_project.updated_at.isoformat()
     }), 201
@@ -52,6 +61,8 @@ def get_projects():
             'prefix': project.prefix,
             'description': project.description,
             'hide_dashboards': project.hide_dashboards,
+            'onshape_document_id': project.onshape_document_id,
+            'onshape_workspace_id': project.onshape_workspace_id,
             'created_at': project.created_at.isoformat(),
             'updated_at': project.updated_at.isoformat()
         }
@@ -68,6 +79,10 @@ def get_project(project_id):
         'prefix': project.prefix,
         'description': project.description,
         'hide_dashboards': project.hide_dashboards,
+        'onshape_document_id': project.onshape_document_id,
+        'onshape_workspace_id': project.onshape_workspace_id,
+        'onshape_access_token': project.onshape_access_token,
+        'onshape_refresh_token': project.onshape_refresh_token,
         'created_at': project.created_at.isoformat(),
         'updated_at': project.updated_at.isoformat()
     })
@@ -84,6 +99,10 @@ def update_project(project_id):
     project.prefix = data.get('prefix', project.prefix)
     project.description = data.get('description', project.description)
     project.hide_dashboards = data.get('hide_dashboards', project.hide_dashboards)
+    project.onshape_document_id = data.get('onshape_document_id', project.onshape_document_id)
+    project.onshape_workspace_id = data.get('onshape_workspace_id', project.onshape_workspace_id)
+    project.onshape_access_token = data.get('onshape_access_token', project.onshape_access_token)
+    project.onshape_refresh_token = data.get('onshape_refresh_token', project.onshape_refresh_token)
 
     db.session.commit()
     return jsonify(message="Project updated successfully", project={
@@ -92,6 +111,10 @@ def update_project(project_id):
         'prefix': project.prefix,
         'description': project.description,
         'hide_dashboards': project.hide_dashboards,
+        'onshape_document_id': project.onshape_document_id,
+        'onshape_workspace_id': project.onshape_workspace_id,
+        'onshape_access_token': project.onshape_access_token,
+        'onshape_refresh_token': project.onshape_refresh_token,
         'updated_at': project.updated_at.isoformat()
     })
 
@@ -2029,6 +2052,34 @@ def register_user_via_link(link_identifier):
         'created_at': new_user.created_at.isoformat()
     }
     return jsonify(message=f"User {new_user.username} created successfully via registration link.", user=user_data), 201
+
+
+@app.route('/api/onshape/webhook', methods=['POST'])
+def onshape_webhook():
+    data = request.json or {}
+    doc_id = data.get('documentId')
+    workspace_id = data.get('workspaceId')
+    if not doc_id or not workspace_id:
+        return jsonify(message='Missing document or workspace id'), 400
+
+    project = Project.query.filter_by(onshape_document_id=doc_id, onshape_workspace_id=workspace_id).first()
+    if not project:
+        app.logger.warning('Received webhook for unknown document %s', doc_id)
+        return jsonify(message='project not found'), 404
+
+    service = OnshapeService(project)
+    try:
+        for part in service.list_parts():
+            meta = service.get_part_metadata(part['elementId'], part['partId'])
+            props = {p['name']: p.get('value') for p in meta.get('properties', [])}
+            if not props.get('Part Number'):
+                number = service.generate_part_number()
+                service.update_part_metadata(part['elementId'], part['partId'], number)
+    except Exception as exc:  # pragma: no cover - network error
+        app.logger.error('Onshape sync failed: %s', exc)
+        return jsonify(message='error processing webhook'), 500
+
+    return jsonify(message='ok')
 
 @app.route('/api/admin/create_user_via_link', methods=['POST'])
 @admin_required # Assuming admin rights are needed to create users this way
