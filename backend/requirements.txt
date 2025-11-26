@@ -5,6 +5,7 @@ Flask-Migrate
 Flask-CORS
 # mysqlclient # Switched to PyMySQL
 PyMySQL
+cryptography  # Required for MySQL sha256_password/caching_sha2_password auth
 Flask-JWT-Extended
 gunicorn # Added Gunicorn for production server
 pyAirtable
