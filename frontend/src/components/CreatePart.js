@@ -1,7 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom'; // Added useLocation
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
-import { useAuth } from '../services/AuthContext'; // Changed import
+import { useAuth } from '../services/AuthContext';
+import {
+  Box,
+  TextField,
+  Button,
+  Typography,
+  Alert,
+  Paper,
+  Container,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormHelperText,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
+} from '@mui/material';
 
 function CreatePart() {
     const [name, setName] = useState('');
@@ -223,208 +240,212 @@ function CreatePart() {
     };
 
     if (!user) {
-        return <p>You must be logged in to create parts.</p>;
+        return (
+            <Container maxWidth="md">
+                <Typography sx={{ mt: 4 }}>You must be logged in to create parts.</Typography>
+            </Container>
+        );
     }
 
     return (
-        <div className="container mt-4">
-            <h2>Create New {partType === 'assembly' ? 'Assembly' : 'Part'}</h2>
-            {error && <div className="alert alert-danger">{error}</div>}
-            <form onSubmit={handleSubmit}>
-                <div className="mb-3">
-                    <label htmlFor="partName" className="form-label">Name</label>
-                    <input
-                        type="text"
-                        className="form-control"
+        <Container maxWidth="md">
+            <Paper elevation={3} sx={{ p: 4, mt: 4 }}>
+                <Typography variant="h4" component="h2" gutterBottom>
+                    Create New {partType === 'assembly' ? 'Assembly' : 'Part'}
+                </Typography>
+                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                <Box component="form" onSubmit={handleSubmit}>
+                    <TextField
+                        fullWidth
+                        label="Name"
                         id="partName"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         required
+                        margin="normal"
                     />
-                </div>
-                <div className="mb-3">
-                    <label htmlFor="partDescription" className="form-label">Description</label>
-                    <textarea
-                        className="form-control"
+                    <TextField
+                        fullWidth
+                        label="Description"
                         id="partDescription"
-                        rows="3"
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
-                    ></textarea>
-                </div>
-                <div className="mb-3">
-                    <label htmlFor="partTypeSelect" className="form-label">Type</label>
-                    <select
-                        className="form-select"
-                        id="partTypeSelect"
-                        value={partType}
-                        onChange={(e) => setPartType(e.target.value)}
-                        required
-                    >
-                        <option value="part">Part</option>
-                        <option value="assembly">Assembly</option>
-                    </select>
-                </div>
-                 <div className="mb-3">
-                    <label htmlFor="projectSelect" className="form-label">Project</label>
-                    <select
-                        className="form-select"
-                        id="projectSelect"
-                        value={projectId}
-                        onChange={(e) => setProjectId(e.target.value)}
-                        required
-                    >
-                        <option value="">Select a Project</option>
-                        {projects.map(project => (
-                            <option key={project.id} value={project.id}>
-                                {project.name} (ID: {project.id})
-                            </option>
-                        ))}
-                    </select>
-                </div>
-                <div className="mb-3">
-                    <label htmlFor="parentPartSelect" className="form-label">Parent Assembly</label>
-                    <select
-                        className="form-select"
-                        id="parentPartSelect"
-                        value={parentPartId}
-                        onChange={(e) => {
-                            setParentPartId(e.target.value);
-                            // Clearing subteam/subsystem here is one approach, 
-                            // but the useEffect above will handle it based on new parentPartId
-                        }}
-                        disabled={!projectId || parts.length === 0}
-                    >
-                        <option value="">None</option>
-                        {parts.map(part => (
-                            <option key={part.id} value={part.id}>
-                                {part.name} (Part Number: {part.part_number})
-                            </option>
-                        ))}
-                    </select>
-                    {!projectId && <small className="form-text text-muted">Select a project to see available parent assemblies.</small>}
-                    {projectId && parts.length === 0 && <small className="form-text text-muted">No assemblies available in the selected project to be a parent.</small>}
-                </div>
+                        multiline
+                        rows={3}
+                        margin="normal"
+                    />
+                    <FormControl fullWidth margin="normal" required>
+                        <InputLabel id="partTypeSelect-label">Type</InputLabel>
+                        <Select
+                            labelId="partTypeSelect-label"
+                            id="partTypeSelect"
+                            value={partType}
+                            label="Type"
+                            onChange={(e) => setPartType(e.target.value)}
+                        >
+                            <MenuItem value="part">Part</MenuItem>
+                            <MenuItem value="assembly">Assembly</MenuItem>
+                        </Select>
+                    </FormControl>
+                    <FormControl fullWidth margin="normal" required>
+                        <InputLabel id="projectSelect-label">Project</InputLabel>
+                        <Select
+                            labelId="projectSelect-label"
+                            id="projectSelect"
+                            value={projectId}
+                            label="Project"
+                            onChange={(e) => setProjectId(e.target.value)}
+                        >
+                            <MenuItem value="">Select a Project</MenuItem>
+                            {projects.map(project => (
+                                <MenuItem key={project.id} value={project.id}>
+                                    {project.name} (ID: {project.id})
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
+                    <FormControl fullWidth margin="normal" disabled={!projectId || parts.length === 0}>
+                        <InputLabel id="parentPartSelect-label">Parent Assembly</InputLabel>
+                        <Select
+                            labelId="parentPartSelect-label"
+                            id="parentPartSelect"
+                            value={parentPartId}
+                            label="Parent Assembly"
+                            onChange={(e) => setParentPartId(e.target.value)}
+                        >
+                            <MenuItem value="">None</MenuItem>
+                            {parts.map(part => (
+                                <MenuItem key={part.id} value={part.id}>
+                                    {part.name} (Part Number: {part.part_number})
+                                </MenuItem>
+                            ))}
+                        </Select>
+                        {!projectId && <FormHelperText>Select a project to see available parent assemblies.</FormHelperText>}
+                        {projectId && parts.length === 0 && <FormHelperText>No assemblies available in the selected project to be a parent.</FormHelperText>}
+                    </FormControl>
 
-                {/* New fields only for type 'part' */}
-                {partType === 'part' && (
-                    <>
-                        <div className="mb-3">
-                            <label htmlFor="quantity" className="form-label">Quantity</label>
-                            <input
+                    {partType === 'part' && (
+                        <>
+                            <TextField
+                                fullWidth
+                                label="Quantity"
                                 type="number"
-                                className="form-control"
                                 id="quantity"
                                 value={quantity}
                                 onChange={(e) => setQuantity(e.target.value)}
                                 required
-                                min="1"
+                                inputProps={{ min: 1 }}
+                                margin="normal"
                             />
-                        </div>
 
-                        <div className="mb-3">
-                            <label htmlFor="machineSelect" className="form-label">Machine</label>
-                            <select
-                                className="form-select"
-                                id="machineSelect"
-                                value={machineId}
-                                onChange={(e) => setMachineId(e.target.value)}
-                                required
-                            >
-                                <option value="">Select a Machine</option>
-                                {machines.map(machine => (
-                                    <option key={machine.id} value={machine.id}>
-                                        {machine.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                            <FormControl fullWidth margin="normal" required>
+                                <InputLabel id="machineSelect-label">Machine</InputLabel>
+                                <Select
+                                    labelId="machineSelect-label"
+                                    id="machineSelect"
+                                    value={machineId}
+                                    label="Machine"
+                                    onChange={(e) => setMachineId(e.target.value)}
+                                >
+                                    <MenuItem value="">Select a Machine</MenuItem>
+                                    {machines.map(machine => (
+                                        <MenuItem key={machine.id} value={machine.id}>
+                                            {machine.name}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
 
-                        <div className="mb-3">
-                            <label htmlFor="rawMaterial" className="form-label">Raw Material</label>
-                            <input
-                                type="text"
-                                className="form-control"
+                            <TextField
+                                fullWidth
+                                label="Raw Material"
                                 id="rawMaterial"
                                 value={rawMaterial}
                                 onChange={(e) => setRawMaterial(e.target.value)}
                                 required
+                                margin="normal"
                             />
-                        </div>
 
-                        <div className="mb-3">
-                            <label className="form-label">Post Processes</label>
-                            <div className="border rounded p-3" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                                {postProcesses.length === 0 ? (
-                                    <div className="text-muted">No post processes available</div>
-                                ) : (
-                                    postProcesses.map(pp => (
-                                        <div key={pp.id} className="form-check">
-                                            <input
-                                                className="form-check-input"
-                                                type="checkbox"
-                                                id={`postProcess-${pp.id}`}
-                                                value={pp.id}
-                                                checked={postProcessIds.includes(pp.id.toString())}
-                                                onChange={handlePostProcessChange}
-                                            />
-                                            <label className="form-check-label" htmlFor={`postProcess-${pp.id}`}>
-                                                {pp.name}
-                                            </label>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </div>
-                        
-                        <div className="mb-3">
-                            <label htmlFor="subteamSelect" className="form-label">Subteam</label>
-                            <select
-                                className="form-select"
-                                id="subteamSelect"
-                                value={subteamId}
-                                onChange={(e) => setSubteamId(e.target.value)}
-                                disabled={!projectId || projectAssemblies.length === 0}
-                            >
-                                <option value="">Select Subteam (Optional)</option>
-                                {projectAssemblies.map(assembly => (
-                                    <option key={assembly.id} value={assembly.id}>
-                                        {assembly.name}
-                                    </option>
-                                ))}
-                            </select>
-                             {!projectId && <small className="form-text text-muted">Select a project to see available assemblies for Subteam.</small>}
-                             {projectId && projectAssemblies.length === 0 && <small className="form-text text-muted">No assemblies available in the selected project for Subteam.</small>}
-                        </div>
+                            <Box sx={{ mt: 2, mb: 2 }}>
+                                <Typography variant="subtitle1" gutterBottom>Post Processes</Typography>
+                                <Paper variant="outlined" sx={{ p: 2, maxHeight: 200, overflowY: 'auto' }}>
+                                    {postProcesses.length === 0 ? (
+                                        <Typography color="text.secondary">No post processes available</Typography>
+                                    ) : (
+                                        <FormGroup>
+                                            {postProcesses.map(pp => (
+                                                <FormControlLabel
+                                                    key={pp.id}
+                                                    control={
+                                                        <Checkbox
+                                                            id={`postProcess-${pp.id}`}
+                                                            value={pp.id}
+                                                            checked={postProcessIds.includes(pp.id.toString())}
+                                                            onChange={handlePostProcessChange}
+                                                        />
+                                                    }
+                                                    label={pp.name}
+                                                />
+                                            ))}
+                                        </FormGroup>
+                                    )}
+                                </Paper>
+                            </Box>
 
-                        <div className="mb-3">
-                            <label htmlFor="subsystemSelect" className="form-label">Subsystem</label>
-                            <select
-                                className="form-select"
-                                id="subsystemSelect"
-                                value={subsystemId}
-                                onChange={(e) => setSubsystemId(e.target.value)}
-                                disabled={!projectId || projectAssemblies.length === 0}
-                            >
-                                <option value="">Select Subsystem (Optional)</option>
-                                {projectAssemblies.map(assembly => (
-                                    <option key={assembly.id} value={assembly.id}>
-                                        {assembly.name}
-                                    </option>
-                                ))}
-                            </select>
-                            {!projectId && <small className="form-text text-muted">Select a project to see available assemblies for Subsystem.</small>}
-                            {projectId && projectAssemblies.length === 0 && <small className="form-text text-muted">No assemblies available in the selected project for Subsystem.</small>}
-                        </div>
-                    </>
-                )}
-                {/* ... end of new fields ... */}
+                            <FormControl fullWidth margin="normal" disabled={!projectId || projectAssemblies.length === 0}>
+                                <InputLabel id="subteamSelect-label">Subteam</InputLabel>
+                                <Select
+                                    labelId="subteamSelect-label"
+                                    id="subteamSelect"
+                                    value={subteamId}
+                                    label="Subteam"
+                                    onChange={(e) => setSubteamId(e.target.value)}
+                                >
+                                    <MenuItem value="">Select Subteam (Optional)</MenuItem>
+                                    {projectAssemblies.map(assembly => (
+                                        <MenuItem key={assembly.id} value={assembly.id}>
+                                            {assembly.name}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                                {!projectId && <FormHelperText>Select a project to see available assemblies for Subteam.</FormHelperText>}
+                                {projectId && projectAssemblies.length === 0 && <FormHelperText>No assemblies available in the selected project for Subteam.</FormHelperText>}
+                            </FormControl>
 
-                <button type="submit" className="btn btn-primary" disabled={isLoading}>
-                    {isLoading ? 'Creating...' : `Create ${partType === 'assembly' ? 'Assembly' : 'Part'}`}
-                </button>
-            </form>
-        </div>
+                            <FormControl fullWidth margin="normal" disabled={!projectId || projectAssemblies.length === 0}>
+                                <InputLabel id="subsystemSelect-label">Subsystem</InputLabel>
+                                <Select
+                                    labelId="subsystemSelect-label"
+                                    id="subsystemSelect"
+                                    value={subsystemId}
+                                    label="Subsystem"
+                                    onChange={(e) => setSubsystemId(e.target.value)}
+                                >
+                                    <MenuItem value="">Select Subsystem (Optional)</MenuItem>
+                                    {projectAssemblies.map(assembly => (
+                                        <MenuItem key={assembly.id} value={assembly.id}>
+                                            {assembly.name}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                                {!projectId && <FormHelperText>Select a project to see available assemblies for Subsystem.</FormHelperText>}
+                                {projectId && projectAssemblies.length === 0 && <FormHelperText>No assemblies available in the selected project for Subsystem.</FormHelperText>}
+                            </FormControl>
+                        </>
+                    )}
+
+                    <Button
+                        type="submit"
+                        variant="contained"
+                        color="primary"
+                        disabled={isLoading}
+                        sx={{ mt: 3 }}
+                    >
+                        {isLoading ? 'Creating...' : `Create ${partType === 'assembly' ? 'Assembly' : 'Part'}`}
+                    </Button>
+                </Box>
+            </Paper>
+        </Container>
     );
 }
 

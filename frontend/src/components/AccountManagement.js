@@ -1,7 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useAuth } from '../services/AuthContext';
-import { Link } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
+import {
+    Container,
+    Paper,
+    Typography,
+    Alert,
+    Button,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Chip,
+    Box,
+} from '@mui/material';
 
 function AccountManagement() {
     const { user } = useAuth();
@@ -17,8 +32,8 @@ function AccountManagement() {
         }
         try {
             setIsLoading(true);
-            const response = await api.get('/users'); // Assuming endpoint /api/users exists
-            setUsers(response.data.users || response.data); // Adjust based on actual API response
+            const response = await api.get('/users');
+            setUsers(response.data.users || response.data);
             setError('');
         } catch (err) {
             setError('Failed to fetch users. ' + (err.response?.data?.message || err.message));
@@ -32,8 +47,7 @@ function AccountManagement() {
         if (window.confirm('Are you sure you want to approve this user? They will be enabled and able to log in.')) {
             try {
                 await api.post(`/users/${userIdToApprove}/approve`);
-                // Refresh the user list to show updated status
-                fetchUsers(); 
+                fetchUsers();
                 alert('User approved successfully.');
             } catch (err) {
                 setError('Failed to approve user. ' + (err.response?.data?.message || err.message));
@@ -43,7 +57,7 @@ function AccountManagement() {
     };
 
     useEffect(() => {
-        if (user) { // Ensure user object is available before checking permission
+        if (user) {
             fetchUsers();
         }
     }, [user, fetchUsers]);
@@ -52,7 +66,6 @@ function AccountManagement() {
         if (window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
             try {
                 await api.delete(`/users/${userIdToDelete}`);
-                // Refresh the list of users after deletion
                 setUsers(prevUsers => prevUsers.filter(u => u.id !== userIdToDelete));
                 alert('User deleted successfully.');
             } catch (err) {
@@ -63,76 +76,128 @@ function AccountManagement() {
     };
 
     if (!user) {
-        return <p>Loading user data...</p>; // Or redirect to login
+        return (
+            <Container maxWidth="lg">
+                <Typography sx={{ mt: 4 }}>Loading user data...</Typography>
+            </Container>
+        );
     }
 
     if (user.permission !== 'admin') {
-        return <p>Access Denied. You must be an administrator to view this page.</p>;
+        return (
+            <Container maxWidth="lg">
+                <Typography sx={{ mt: 4 }}>Access Denied. You must be an administrator to view this page.</Typography>
+            </Container>
+        );
     }
 
-    if (isLoading) return <p>Loading accounts...</p>;
-    if (error && users.length === 0) return <p sx={{ color: 'error.main' }}>{error}</p>; // Show error if loading failed and no users
+    if (isLoading) {
+        return (
+            <Container maxWidth="lg">
+                <Typography sx={{ mt: 4 }}>Loading accounts...</Typography>
+            </Container>
+        );
+    }
+
+    if (error && users.length === 0) {
+        return (
+            <Container maxWidth="lg">
+                <Alert severity="error" sx={{ mt: 4 }}>{error}</Alert>
+            </Container>
+        );
+    }
 
     return (
-        <div className="container mt-4">
-            <h2>User Account Management</h2>
-            {error && <div className="alert alert-danger">{error}</div>} 
-            <Link to="/admin/create-user" className="btn btn-primary mb-3">Create New User</Link>
-            
-            {users.length > 0 ? (
-                <table className="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Username</th>
-                            <th>Email</th>
-                            <th>Permission</th>
-                            <th>Enabled</th>
-                            <th>Approval Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {users.map(managedUser => (
-                            <tr key={managedUser.id}>
-                                <td>{managedUser.id}</td>
-                                <td>{managedUser.username}</td>
-                                <td>{managedUser.email}</td>
-                                <td>{managedUser.permission}</td>
-                                <td>{managedUser.enabled ? 'Yes' : 'No'}</td>
-                                <td>
-                                    {managedUser.is_approved ? 
-                                        <span className="badge bg-success">Approved</span> : 
-                                        <span className="badge bg-warning text-dark">Pending since {managedUser.requested_at ? new Date(managedUser.requested_at).toLocaleDateString() : 'N/A'}</span>
-                                    }
-                                </td>
-                                <td>
-                                    {!managedUser.is_approved && (
-                                        <button 
-                                            onClick={() => handleApproveUser(managedUser.id)} 
-                                            className="btn btn-sm btn-success me-1"
-                                            disabled={managedUser.id === user.id}
-                                        >
-                                            Approve
-                                        </button>
-                                    )}
-                                    <Link to={`/admin/edit-user/${managedUser.id}`} className="btn btn-sm btn-outline-secondary me-1">Edit</Link>
-                                    <button 
-                                        onClick={() => handleDeleteUser(managedUser.id)} 
-                                        className="btn btn-sm btn-outline-danger"
-                                        disabled={managedUser.id === user.id} // Prevent admin from deleting themselves
-                                    >
-                                        Delete
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            ) : (
-                !error && <p>No user accounts found.</p> // Show only if no error and no users
-            )}
-        </div>
+        <Container maxWidth="lg">
+            <Paper elevation={3} sx={{ p: 4, mt: 4 }}>
+                <Typography variant="h4" component="h2" gutterBottom>
+                    User Account Management
+                </Typography>
+                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                <Button
+                    component={RouterLink}
+                    to="/admin/create-user"
+                    variant="contained"
+                    color="primary"
+                    sx={{ mb: 3 }}
+                >
+                    Create New User
+                </Button>
+
+                {users.length > 0 ? (
+                    <TableContainer component={Paper} variant="outlined">
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>ID</TableCell>
+                                    <TableCell>Username</TableCell>
+                                    <TableCell>Email</TableCell>
+                                    <TableCell>Permission</TableCell>
+                                    <TableCell>Enabled</TableCell>
+                                    <TableCell>Approval Status</TableCell>
+                                    <TableCell>Actions</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {users.map(managedUser => (
+                                    <TableRow key={managedUser.id}>
+                                        <TableCell>{managedUser.id}</TableCell>
+                                        <TableCell>{managedUser.username}</TableCell>
+                                        <TableCell>{managedUser.email}</TableCell>
+                                        <TableCell>{managedUser.permission}</TableCell>
+                                        <TableCell>{managedUser.enabled ? 'Yes' : 'No'}</TableCell>
+                                        <TableCell>
+                                            {managedUser.is_approved ?
+                                                <Chip label="Approved" color="success" size="small" /> :
+                                                <Chip
+                                                    label={`Pending since ${managedUser.requested_at ? new Date(managedUser.requested_at).toLocaleDateString() : 'N/A'}`}
+                                                    color="warning"
+                                                    size="small"
+                                                />
+                                            }
+                                        </TableCell>
+                                        <TableCell>
+                                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                                {!managedUser.is_approved && (
+                                                    <Button
+                                                        onClick={() => handleApproveUser(managedUser.id)}
+                                                        variant="contained"
+                                                        color="success"
+                                                        size="small"
+                                                        disabled={managedUser.id === user.id}
+                                                    >
+                                                        Approve
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    component={RouterLink}
+                                                    to={`/admin/edit-user/${managedUser.id}`}
+                                                    variant="outlined"
+                                                    size="small"
+                                                >
+                                                    Edit
+                                                </Button>
+                                                <Button
+                                                    onClick={() => handleDeleteUser(managedUser.id)}
+                                                    variant="outlined"
+                                                    color="error"
+                                                    size="small"
+                                                    disabled={managedUser.id === user.id}
+                                                >
+                                                    Delete
+                                                </Button>
+                                            </Box>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                ) : (
+                    !error && <Typography>No user accounts found.</Typography>
+                )}
+            </Paper>
+        </Container>
     );
 }
 
